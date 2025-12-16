@@ -1,0 +1,25 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    
+    "CosmosDb__ConnectionString": "YOUR_COSMOS_DB_CONNECTION_STRING",
+    "CosmosDb__DatabaseName": "EmployeeMatcherDB",
+    "CosmosDb__EmployeesContainer": "Employees",
+    "CosmosDb__ProjectsContainer": "Projects",
+    
+    "Search__Endpoint": "https://YOUR_SEARCH_SERVICE.search.windows.net",
+    "Search__ApiKey": "YOUR_SEARCH_API_KEY",
+    "Search__IndexName": "employees-index",
+    
+    "OpenAI__Endpoint": "https://YOUR_OPENAI_SERVICE.openai.azure.com",
+    "OpenAI__ApiKey": "YOUR_OPENAI_API_KEY",
+    "OpenAI__EmbeddingDeployment": "text-embedding-ada-002",
+    "OpenAI__ChatDeployment": "gpt-4o-mini"
+  },
+  "Host": {
+    "CORS": "*",
+    "CORSCredentials": false
+  }
+}
