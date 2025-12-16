@@ -3,7 +3,10 @@ using AlejanBros.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
+using Microsoft.OpenApi.Models;
+using System.Net;
 using System.Text.Json;
 
 namespace AlejanBros.Functions;
@@ -28,8 +31,11 @@ public class MatchFunctions
     }
 
     [Function("FindMatches")]
+    [OpenApiOperation(operationId: "FindMatches", tags: new[] { "Matching" }, Summary = "Find matching employees", Description = "Uses AI to find and rank employees matching the specified requirements")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(MatchRequest), Required = true, Description = "Match criteria")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(MatchResponse), Description = "Match results")]
     public async Task<IActionResult> FindMatches(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "match")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "match")] HttpRequest req)
     {
         _logger.LogInformation("Processing match request");
 
@@ -62,8 +68,12 @@ public class MatchFunctions
     }
 
     [Function("FindMatchesForProject")]
+    [OpenApiOperation(operationId: "FindMatchesForProject", tags: new[] { "Matching" }, Summary = "Find matches for a project", Description = "Finds employees matching a specific project's requirements")]
+    [OpenApiParameter(name: "projectId", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Project ID")]
+    [OpenApiParameter(name: "teamSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Number of team members needed")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(MatchResponse), Description = "Match results")]
     public async Task<IActionResult> FindMatchesForProject(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "projects/{projectId}/matches")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects/{projectId}/matches")] HttpRequest req,
         string projectId)
     {
         _logger.LogInformation("Finding matches for project: {ProjectId}", projectId);
@@ -89,8 +99,11 @@ public class MatchFunctions
     }
 
     [Function("ChatMatch")]
+    [OpenApiOperation(operationId: "ChatMatch", tags: new[] { "Chat" }, Summary = "Chat with AI to find employees", Description = "Natural language interface to find matching employees")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ChatRequest), Required = true, Description = "Chat message")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ChatResponse), Description = "AI response")]
     public async Task<IActionResult> ChatMatch(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "chat")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "chat")] HttpRequest req)
     {
         _logger.LogInformation("Processing chat request");
 

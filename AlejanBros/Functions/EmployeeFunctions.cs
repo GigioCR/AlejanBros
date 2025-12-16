@@ -3,7 +3,10 @@ using AlejanBros.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
+using Microsoft.OpenApi.Models;
+using System.Net;
 using System.Text.Json;
 
 namespace AlejanBros.Functions;
@@ -25,8 +28,10 @@ public class EmployeeFunctions
     }
 
     [Function("GetEmployees")]
+    [OpenApiOperation(operationId: "GetEmployees", tags: new[] { "Employees" }, Summary = "Get all employees", Description = "Returns a list of all employees in the system")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(IEnumerable<Employee>), Description = "List of employees")]
     public async Task<IActionResult> GetEmployees(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "employees")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "employees")] HttpRequest req)
     {
         _logger.LogInformation("Getting all employees");
 
@@ -43,8 +48,12 @@ public class EmployeeFunctions
     }
 
     [Function("GetEmployee")]
+    [OpenApiOperation(operationId: "GetEmployee", tags: new[] { "Employees" }, Summary = "Get employee by ID", Description = "Returns a single employee by their ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Employee ID")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Employee), Description = "Employee found")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Employee not found")]
     public async Task<IActionResult> GetEmployee(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "employees/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "employees/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Getting employee with ID: {Id}", id);
@@ -66,8 +75,11 @@ public class EmployeeFunctions
     }
 
     [Function("CreateEmployee")]
+    [OpenApiOperation(operationId: "CreateEmployee", tags: new[] { "Employees" }, Summary = "Create a new employee", Description = "Creates a new employee and indexes them for search")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(Employee), Required = true, Description = "Employee data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Created, contentType: "application/json", bodyType: typeof(Employee), Description = "Employee created")]
     public async Task<IActionResult> CreateEmployee(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "employees")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "employees")] HttpRequest req)
     {
         _logger.LogInformation("Creating new employee");
 
@@ -104,8 +116,12 @@ public class EmployeeFunctions
     }
 
     [Function("UpdateEmployee")]
+    [OpenApiOperation(operationId: "UpdateEmployee", tags: new[] { "Employees" }, Summary = "Update an employee", Description = "Updates an existing employee by ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Employee ID")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(Employee), Required = true, Description = "Updated employee data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Employee), Description = "Employee updated")]
     public async Task<IActionResult> UpdateEmployee(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "employees/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "employees/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Updating employee with ID: {Id}", id);
@@ -139,8 +155,11 @@ public class EmployeeFunctions
     }
 
     [Function("DeleteEmployee")]
+    [OpenApiOperation(operationId: "DeleteEmployee", tags: new[] { "Employees" }, Summary = "Delete an employee", Description = "Deletes an employee by ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Employee ID")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NoContent, Description = "Employee deleted")]
     public async Task<IActionResult> DeleteEmployee(
-        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "employees/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "employees/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Deleting employee with ID: {Id}", id);

@@ -3,7 +3,9 @@ using AlejanBros.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
+using System.Net;
 using System.Text.Json;
 
 namespace AlejanBros.Functions;
@@ -25,8 +27,10 @@ public class AdminFunctions
     }
 
     [Function("InitializeSearchIndex")]
+    [OpenApiOperation(operationId: "InitializeSearchIndex", tags: new[] { "Admin" }, Summary = "Initialize search index", Description = "Creates or updates the Azure AI Search index")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Index initialized")]
     public async Task<IActionResult> InitializeSearchIndex(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "admin/initialize-index")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "setup/initialize-index")] HttpRequest req)
     {
         _logger.LogInformation("Initializing search index");
 
@@ -43,8 +47,10 @@ public class AdminFunctions
     }
 
     [Function("ReindexAllEmployees")]
+    [OpenApiOperation(operationId: "ReindexAllEmployees", tags: new[] { "Admin" }, Summary = "Reindex all employees", Description = "Reindexes all employees in Azure AI Search")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Reindexing completed")]
     public async Task<IActionResult> ReindexAllEmployees(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "admin/reindex")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "setup/reindex")] HttpRequest req)
     {
         _logger.LogInformation("Reindexing all employees");
 
@@ -67,8 +73,10 @@ public class AdminFunctions
     }
 
     [Function("SeedSampleData")]
+    [OpenApiOperation(operationId: "SeedSampleData", tags: new[] { "Admin" }, Summary = "Seed sample data", Description = "Seeds the database with sample employees and projects")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Sample data seeded")]
     public async Task<IActionResult> SeedSampleData(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "admin/seed")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "setup/seed")] HttpRequest req)
     {
         _logger.LogInformation("Seeding sample data");
 
@@ -106,6 +114,8 @@ public class AdminFunctions
     }
 
     [Function("HealthCheck")]
+    [OpenApiOperation(operationId: "HealthCheck", tags: new[] { "Admin" }, Summary = "Health check", Description = "Returns the health status of the API")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Health status")]
     public IActionResult HealthCheck(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequest req)
     {

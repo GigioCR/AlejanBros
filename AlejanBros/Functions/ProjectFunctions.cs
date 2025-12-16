@@ -3,7 +3,10 @@ using AlejanBros.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
+using Microsoft.OpenApi.Models;
+using System.Net;
 using System.Text.Json;
 
 namespace AlejanBros.Functions;
@@ -22,8 +25,10 @@ public class ProjectFunctions
     }
 
     [Function("GetProjects")]
+    [OpenApiOperation(operationId: "GetProjects", tags: new[] { "Projects" }, Summary = "Get all projects", Description = "Returns a list of all projects")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(IEnumerable<Project>), Description = "List of projects")]
     public async Task<IActionResult> GetProjects(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "projects")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects")] HttpRequest req)
     {
         _logger.LogInformation("Getting all projects");
 
@@ -40,8 +45,11 @@ public class ProjectFunctions
     }
 
     [Function("GetProject")]
+    [OpenApiOperation(operationId: "GetProject", tags: new[] { "Projects" }, Summary = "Get project by ID", Description = "Returns a single project by ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Project ID")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Project), Description = "Project found")]
     public async Task<IActionResult> GetProject(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "projects/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Getting project with ID: {Id}", id);
@@ -63,8 +71,11 @@ public class ProjectFunctions
     }
 
     [Function("CreateProject")]
+    [OpenApiOperation(operationId: "CreateProject", tags: new[] { "Projects" }, Summary = "Create a new project", Description = "Creates a new project")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(Project), Required = true, Description = "Project data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Created, contentType: "application/json", bodyType: typeof(Project), Description = "Project created")]
     public async Task<IActionResult> CreateProject(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "projects")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "projects")] HttpRequest req)
     {
         _logger.LogInformation("Creating new project");
 
@@ -97,8 +108,12 @@ public class ProjectFunctions
     }
 
     [Function("UpdateProject")]
+    [OpenApiOperation(operationId: "UpdateProject", tags: new[] { "Projects" }, Summary = "Update a project", Description = "Updates an existing project by ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Project ID")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(Project), Required = true, Description = "Updated project data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Project), Description = "Project updated")]
     public async Task<IActionResult> UpdateProject(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "projects/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "projects/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Updating project with ID: {Id}", id);
@@ -128,8 +143,11 @@ public class ProjectFunctions
     }
 
     [Function("DeleteProject")]
+    [OpenApiOperation(operationId: "DeleteProject", tags: new[] { "Projects" }, Summary = "Delete a project", Description = "Deletes a project by ID")]
+    [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "Project ID")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NoContent, Description = "Project deleted")]
     public async Task<IActionResult> DeleteProject(
-        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "projects/{id}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "projects/{id}")] HttpRequest req,
         string id)
     {
         _logger.LogInformation("Deleting project with ID: {Id}", id);

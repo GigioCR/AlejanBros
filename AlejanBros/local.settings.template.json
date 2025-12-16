@@ -5,7 +5,7 @@
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     
     "CosmosDb__ConnectionString": "YOUR_COSMOS_DB_CONNECTION_STRING",
-    "CosmosDb__DatabaseName": "EmployeeMatcherDB",
+    "CosmosDb__DatabaseName": "EmployeeDB",
     "CosmosDb__EmployeesContainer": "Employees",
     "CosmosDb__ProjectsContainer": "Projects",
     
@@ -16,7 +16,7 @@
     "OpenAI__Endpoint": "https://YOUR_OPENAI_SERVICE.openai.azure.com",
     "OpenAI__ApiKey": "YOUR_OPENAI_API_KEY",
     "OpenAI__EmbeddingDeployment": "text-embedding-ada-002",
-    "OpenAI__ChatDeployment": "gpt-4o-mini"
+    "OpenAI__ChatDeployment": "gpt-4o"
   },
   "Host": {
     "CORS": "*",

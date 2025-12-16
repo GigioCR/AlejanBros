@@ -41,7 +41,16 @@ builder.Services.AddSingleton(sp =>
     {
         throw new InvalidOperationException("CosmosDb__ConnectionString is not configured");
     }
-    return new CosmosClient(connectionString);
+    
+    var options = new CosmosClientOptions
+    {
+        SerializerOptions = new CosmosSerializationOptions
+        {
+            PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+        }
+    };
+    
+    return new CosmosClient(connectionString, options);
 });
 
 // Register Azure AI Search Client
