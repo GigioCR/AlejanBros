@@ -99,9 +99,9 @@ public class MatchFunctions
     }
 
     [Function("ChatMatch")]
-    [OpenApiOperation(operationId: "ChatMatch", tags: new[] { "Chat" }, Summary = "Chat with AI to find employees", Description = "Natural language interface to find matching employees")]
+    [OpenApiOperation(operationId: "ChatMatch", tags: new[] { "Chat" }, Summary = "Chat with AI to find employees", Description = "Natural language interface to find matching employees with structured results")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ChatRequest), Required = true, Description = "Chat message")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ChatResponse), Description = "AI response")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ChatResponse), Description = "AI response with matches")]
     public async Task<IActionResult> ChatMatch(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "chat")] HttpRequest req)
     {
@@ -120,26 +120,80 @@ public class MatchFunctions
                 return new BadRequestObjectResult(new { message = "Message is required" });
             }
 
-            // Create a match request from the chat message
-            var matchRequest = new MatchRequest
-            {
-                Query = chatRequest.Message,
-                TeamSize = chatRequest.TeamSize ?? 5,
-                AvailabilityRequired = chatRequest.AvailabilityRequired ?? true
-            };
+            // Convert history to ConversationMessage format for OpenAI service
+            var conversationHistory = chatRequest.History?
+                .Select(h => new ConversationMessage { Role = h.Role, Content = h.Content })
+                .ToList();
 
-            // Get all employees for analysis
+            // Classify the query type to determine how to handle it
+            var queryType = await _openAIService.ClassifyQueryTypeAsync(chatRequest.Message);
+            _logger.LogInformation("Query classified as: {QueryType}", queryType);
+
+            // Get all employees for context
             var employees = await _cosmosDbService.GetAllEmployeesAsync();
 
-            // Generate a conversational response
-            var analysis = await _openAIService.GenerateMatchAnalysisAsync(matchRequest, employees);
-
-            return new OkObjectResult(new ChatResponse
+            // Handle based on query type
+            switch (queryType)
             {
-                Message = chatRequest.Message,
-                Response = analysis,
-                Timestamp = DateTime.UtcNow
-            });
+                case QueryType.OffTopic:
+                    return new OkObjectResult(new ChatResponse
+                    {
+                        Message = chatRequest.Message,
+                        Response = "I'm specifically designed to help you find and match employees to projects. I can help you with:\n\n" +
+                                   "- **Finding developers** with specific skills (e.g., \"Find React developers\")\n" +
+                                   "- **Building teams** for projects (e.g., \"I need a team for a .NET project\")\n" +
+                                   "- **Matching employees** to requirements (e.g., \"Who has Azure experience?\")\n" +
+                                   "- **Questions about employees** (e.g., \"What is María's availability?\")\n\n" +
+                                   "What can I help you with?",
+                        Matches = new List<MatchResult>(),
+                        Summary = string.Empty,
+                        TotalCandidates = 0,
+                        Timestamp = DateTime.UtcNow
+                    });
+
+                case QueryType.EmployeeQuestion:
+                case QueryType.FollowUp:
+                    // Answer the question without running full matching, with conversation history
+                    var answer = await _openAIService.AnswerEmployeeQuestionAsync(chatRequest.Message, employees, conversationHistory);
+                    return new OkObjectResult(new ChatResponse
+                    {
+                        Message = chatRequest.Message,
+                        Response = answer,
+                        Matches = new List<MatchResult>(),
+                        Summary = string.Empty,
+                        TotalCandidates = employees.Count(),
+                        Timestamp = DateTime.UtcNow
+                    });
+
+                case QueryType.MatchRequest:
+                default:
+                    // Extract team size from the message if not explicitly provided
+                    var teamSize = chatRequest.TeamSize ?? ChatRequest.ExtractTeamSizeFromMessage(chatRequest.Message) ?? 5;
+
+                    // Create a match request from the chat message
+                    var matchRequest = new MatchRequest
+                    {
+                        Query = chatRequest.Message,
+                        TeamSize = teamSize,
+                        AvailabilityRequired = chatRequest.AvailabilityRequired ?? true
+                    };
+
+                    // Get structured matches with scores
+                    var matchResponse = await _matcherService.FindMatchesAsync(matchRequest);
+
+                    // Also generate a conversational analysis for context, with conversation history
+                    var analysis = await _openAIService.GenerateMatchAnalysisAsync(matchRequest, employees, conversationHistory);
+
+                    return new OkObjectResult(new ChatResponse
+                    {
+                        Message = chatRequest.Message,
+                        Response = analysis,
+                        Matches = matchResponse.Matches,
+                        Summary = matchResponse.Summary,
+                        TotalCandidates = matchResponse.TotalCandidates,
+                        Timestamp = DateTime.UtcNow
+                    });
+            }
         }
         catch (Exception ex)
         {
@@ -149,10 +203,46 @@ public class MatchFunctions
     }
 }
 
+public class ChatMessage
+{
+    public string Role { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+}
+
 public class ChatRequest
 {
     public string Message { get; set; } = string.Empty;
     public int? TeamSize { get; set; }
+    public List<ChatMessage>? History { get; set; }
+
+    public static int? ExtractTeamSizeFromMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return null;
+
+        var lowerMessage = message.ToLowerInvariant();
+
+        // Patterns like "top 3", "best 10", "need 7", "find 5", "give me 8", "show 4"
+        var patterns = new[]
+        {
+            @"(?:top|best|need|find|give\s+me|show|get)\s+(\d+)",
+            @"(\d+)\s+(?:employees?|developers?|people|candidates?|members?|engineers?)",
+            @"team\s+(?:of\s+)?(\d+)",
+            @"(\d+)\s+(?:best|top)"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(lowerMessage, pattern);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var size))
+            {
+                // Reasonable bounds: 1-50
+                return Math.Clamp(size, 1, 50);
+            }
+        }
+
+        return null;
+    }
+
     public bool? AvailabilityRequired { get; set; }
 }
 
@@ -160,5 +250,8 @@ public class ChatResponse
 {
     public string Message { get; set; } = string.Empty;
     public string Response { get; set; } = string.Empty;
+    public List<MatchResult> Matches { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+    public int TotalCandidates { get; set; }
     public DateTime Timestamp { get; set; }
 }

@@ -42,7 +42,7 @@ public class OpenAIService : IOpenAIService
         }
     }
 
-    public async Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates)
+    public async Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null)
     {
         var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
@@ -51,6 +51,7 @@ public class OpenAIService : IOpenAIService
             Analyze the project requirements and candidate profiles to provide recommendations.
             Be concise but thorough in your analysis.
             Focus on skill matches, experience levels, and availability.
+            You have access to the conversation history for context.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
@@ -85,9 +86,22 @@ public class OpenAIService : IOpenAIService
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(systemPrompt),
-            new UserChatMessage(userPrompt)
+            new SystemChatMessage(systemPrompt)
         };
+
+        // Add conversation history for context
+        if (history != null && history.Count > 0)
+        {
+            foreach (var msg in history)
+            {
+                if (msg.Role.Equals("user", StringComparison.OrdinalIgnoreCase))
+                    messages.Add(new UserChatMessage(msg.Content));
+                else if (msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
+                    messages.Add(new AssistantChatMessage(msg.Content));
+            }
+        }
+
+        messages.Add(new UserChatMessage(userPrompt));
 
         var response = await chatClient.CompleteChatAsync(messages);
         return response.Value.Content[0].Text;
@@ -238,6 +252,161 @@ public class OpenAIService : IOpenAIService
         }
 
         return skillMatches;
+    }
+
+    public async Task<bool> IsMatchingRelatedQueryAsync(string message)
+    {
+        try
+        {
+            var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+
+            var systemPrompt = """
+                You are a classifier that determines if a user message is related to employee-project matching in an HR context.
+                
+                VALID queries (return "yes"):
+                - Finding employees with specific skills
+                - Building teams for projects
+                - Matching candidates to requirements
+                - Questions about employee availability
+                - Requests for developer/engineer recommendations
+                - Follow-up questions about previously recommended employees
+                - Questions asking WHY an employee was ranked/recommended (e.g., "Why is María above Carlos?")
+                - Questions about employee comparisons or rankings
+                - Questions about skill gaps or qualifications
+                - Clarifying questions about recommendations
+                - Any question that references employees by name
+                
+                INVALID queries (return "no"):
+                - General knowledge questions unrelated to employees
+                - Questions about the system/architecture/how the app works
+                - Math problems
+                - Weather, news, jokes
+                - Personal questions about the AI
+                - Completely off-topic requests
+                
+                When in doubt, return "yes" to allow the conversation to continue naturally.
+                Respond with ONLY "yes" or "no".
+                """;
+
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(message)
+            };
+
+            var response = await chatClient.CompleteChatAsync(messages);
+            var result = response.Value.Content[0].Text.Trim().ToLowerInvariant();
+
+            return result.Contains("yes");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to classify query intent, allowing by default");
+            return true; // Allow on error to avoid blocking legitimate queries
+        }
+    }
+
+    public async Task<QueryType> ClassifyQueryTypeAsync(string message)
+    {
+        try
+        {
+            var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+
+            var systemPrompt = """
+                Classify the user message into one of these categories:
+                
+                1. MATCH - User wants to find, search, or build a team of employees for a project
+                   Examples: "Find React developers", "I need a team for a .NET project", "Who is available for cloud work?"
+                
+                2. QUESTION - User is asking a specific question about an employee or employees
+                   Examples: "What is María's availability?", "Tell me about Carlos", "What skills does Laura have?"
+                
+                3. FOLLOWUP - User is asking a follow-up about previous recommendations or rankings
+                   Examples: "Why is she ranked higher?", "Tell me more about the first one", "Why was María recommended?"
+                
+                4. OFFTOPIC - Anything not related to employees or projects
+                   Examples: "What's the weather?", "Tell me a joke", "How does this system work?"
+                
+                Respond with ONLY one word: MATCH, QUESTION, FOLLOWUP, or OFFTOPIC
+                """;
+
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(message)
+            };
+
+            var response = await chatClient.CompleteChatAsync(messages);
+            var result = response.Value.Content[0].Text.Trim().ToUpperInvariant();
+
+            return result switch
+            {
+                "MATCH" => QueryType.MatchRequest,
+                "QUESTION" => QueryType.EmployeeQuestion,
+                "FOLLOWUP" => QueryType.FollowUp,
+                _ => QueryType.OffTopic
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to classify query type, defaulting to MatchRequest");
+            return QueryType.MatchRequest;
+        }
+    }
+
+    public async Task<string> AnswerEmployeeQuestionAsync(string question, IEnumerable<Employee> employees, List<ConversationMessage>? history = null)
+    {
+        var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+
+        var systemPrompt = """
+            You are an HR assistant. Answer the user's question about employees based on the provided employee data.
+            Be concise and helpful. Only answer questions about the employees in the data provided.
+            If the employee mentioned is not in the data, say so politely.
+            Do NOT recommend or rank employees unless explicitly asked.
+            You have access to the conversation history for context about previous recommendations.
+            """;
+
+        var employeesJson = JsonSerializer.Serialize(employees.Select(e => new
+        {
+            e.Name,
+            e.JobTitle,
+            e.Department,
+            e.YearsOfExperience,
+            Skills = e.Skills.Select(s => new { s.Name, Level = s.Level.ToString() }),
+            Availability = e.Availability.ToString(),
+            e.Location,
+            e.Bio,
+            e.Certifications
+        }), new JsonSerializerOptions { WriteIndented = true });
+
+        var userPrompt = $"""
+            Employee Data:
+            {employeesJson}
+
+            User Question: {question}
+            """;
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(systemPrompt)
+        };
+
+        // Add conversation history for context
+        if (history != null && history.Count > 0)
+        {
+            foreach (var msg in history)
+            {
+                if (msg.Role.Equals("user", StringComparison.OrdinalIgnoreCase))
+                    messages.Add(new UserChatMessage(msg.Content));
+                else if (msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
+                    messages.Add(new AssistantChatMessage(msg.Content));
+            }
+        }
+
+        messages.Add(new UserChatMessage(userPrompt));
+
+        var response = await chatClient.CompleteChatAsync(messages);
+        return response.Value.Content[0].Text;
     }
 
     private class AnalysisResponse

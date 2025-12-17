@@ -18,7 +18,8 @@ export interface Employee {
   id: string;
   name: string;
   email: string;
-  title: string;
+  title?: string;
+  jobTitle?: string;
   department: string;
   skills: { name: string; level: number }[];
   availability: number;
@@ -54,6 +55,9 @@ export interface MatchResponse {
 export interface ChatResponse {
   message: string;
   response: string;
+  matches: MatchResult[];
+  summary: string;
+  totalCandidates: number;
   timestamp: string;
 }
 
@@ -196,10 +200,10 @@ class ApiClient {
   }
 
   // Chat
-  async chat(message: string, teamSize?: number): Promise<ChatResponse> {
+  async chat(message: string, history?: { role: string; content: string }[], teamSize?: number): Promise<ChatResponse> {
     return this.request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, teamSize }),
+      body: JSON.stringify({ message, history, teamSize }),
     });
   }
 }

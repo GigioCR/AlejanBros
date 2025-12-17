@@ -1,13 +1,73 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { api } from '../lib/api';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
+import { api, type MatchResult } from '../lib/api';
+import { Send, Bot, User, Loader2, Star, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  matches?: MatchResult[];
   timestamp: Date;
+}
+
+function MatchCard({ match, rank }: { match: MatchResult; rank: number }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-gray-800 rounded-lg border border-gray-600 p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+            #{rank}
+          </div>
+          <div>
+            <p className="font-medium text-white text-sm">{match.employee.name}</p>
+            <p className="text-xs text-gray-400">{match.employee.jobTitle || match.employee.title}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-400 rounded-full text-xs">
+            <Star className="w-3 h-3" />
+            <span className="font-semibold">{Math.round(match.matchScore * 100)}%</span>
+          </div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="p-1 text-gray-400 hover:text-white transition-colors"
+          >
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-gray-600 space-y-2">
+          {match.matchReasons && match.matchReasons.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-400 mb-1">Why they match:</p>
+              <ul className="text-xs text-gray-300 list-disc list-inside">
+                {match.matchReasons.map((reason, i) => (
+                  <li key={i}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {match.gaps && match.gaps.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-400 mb-1">Skill gaps:</p>
+              <div className="flex flex-wrap gap-1">
+                {match.gaps.map((gap, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded-full">
+                    {gap}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ChatTab() {
@@ -42,16 +102,24 @@ export function ChatTab() {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput('');
     setIsLoading(true);
 
     try {
-      const response = await api.chat(userMessage.content);
+      // Build conversation history for context (last 10 messages, excluding the welcome message)
+      const history = updatedMessages
+        .filter(m => m.id !== '1') // Exclude initial welcome message
+        .slice(-10) // Keep last 10 messages for context
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const response = await api.chat(userMessage.content, history);
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: response.response,
+        matches: response.matches,
         timestamp: new Date(response.timestamp),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -71,8 +139,8 @@ export function ChatTab() {
   return (
     <div className="flex flex-col h-[calc(100vh-220px)]">
       <div className="mb-4">
-        <h2 className="text-2xl font-bold text-white">AI Chat Assistant</h2>
-        <p className="text-gray-400">Have a conversation to find the perfect team members</p>
+        <h2 className="text-2xl font-bold text-white">AI-Powered Team Matching</h2>
+        <p className="text-gray-400">Describe your project needs and get ranked employee matches with detailed analysis</p>
       </div>
 
       <div className="flex-1 bg-gray-800 rounded-xl border border-gray-700 flex flex-col overflow-hidden">
@@ -104,9 +172,21 @@ export function ChatTab() {
                 }`}
               >
                 {message.role === 'assistant' ? (
-                  <div className="prose prose-invert prose-sm max-w-none prose-headings:text-gray-100 prose-p:text-gray-200 prose-strong:text-white prose-li:text-gray-200">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
-                  </div>
+                  <>
+                    {/* Match Cards */}
+                    {message.matches && message.matches.length > 0 && (
+                      <div className="mb-4 space-y-2">
+                        <p className="text-sm font-medium text-gray-300 mb-2">Top Matches:</p>
+                        {message.matches.slice(0, 5).map((match, index) => (
+                          <MatchCard key={match.employee.id} match={match} rank={index + 1} />
+                        ))}
+                      </div>
+                    )}
+                    {/* Analysis Text */}
+                    <div className="prose prose-invert prose-sm max-w-none prose-headings:text-gray-100 prose-p:text-gray-200 prose-strong:text-white prose-li:text-gray-200">
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    </div>
+                  </>
                 ) : (
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 )}

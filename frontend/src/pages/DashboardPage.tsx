@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Users, FolderKanban, Search, MessageSquare } from 'lucide-react';
+import { LogOut, Users, FolderKanban, Sparkles } from 'lucide-react';
 import { EmployeesTab } from '../components/EmployeesTab';
 import { ProjectsTab } from '../components/ProjectsTab';
-import { MatchingTab } from '../components/MatchingTab';
 import { ChatTab } from '../components/ChatTab';
 
-type TabType = 'employees' | 'projects' | 'matching' | 'chat';
+type TabType = 'employees' | 'projects' | 'matching';
 
 const tabs = [
   { id: 'employees' as TabType, label: 'Employees', icon: Users },
   { id: 'projects' as TabType, label: 'Projects', icon: FolderKanban },
-  { id: 'matching' as TabType, label: 'AI Matching', icon: Search },
-  { id: 'chat' as TabType, label: 'Chat', icon: MessageSquare },
+  { id: 'matching' as TabType, label: 'AI Matching', icon: Sparkles },
 ];
 
 export function DashboardPage() {
@@ -82,8 +80,7 @@ export function DashboardPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'employees' && <EmployeesTab />}
         {activeTab === 'projects' && <ProjectsTab />}
-        {activeTab === 'matching' && <MatchingTab />}
-        {activeTab === 'chat' && <ChatTab />}
+        {activeTab === 'matching' && <ChatTab />}
       </main>
     </div>
   );
