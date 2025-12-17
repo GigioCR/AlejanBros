@@ -12,6 +12,9 @@ var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
 
+// Configure JWT Middleware
+builder.UseMiddleware<AlejanBros.Middleware.JwtMiddleware>();
+
 // Configure Azure Settings
 builder.Services.Configure<AzureSettings>(options =>
 {
@@ -20,6 +23,12 @@ builder.Services.Configure<AzureSettings>(options =>
     options.CosmosDb.DatabaseName = Environment.GetEnvironmentVariable("CosmosDb__DatabaseName") ?? "EmployeeMatcherDB";
     options.CosmosDb.EmployeesContainer = Environment.GetEnvironmentVariable("CosmosDb__EmployeesContainer") ?? "Employees";
     options.CosmosDb.ProjectsContainer = Environment.GetEnvironmentVariable("CosmosDb__ProjectsContainer") ?? "Projects";
+    options.CosmosDb.UsersContainer = Environment.GetEnvironmentVariable("CosmosDb__UsersContainer") ?? "Users";
+
+    // JWT Settings
+    options.Jwt.Secret = Environment.GetEnvironmentVariable("Jwt__Secret") ?? "";
+    options.Jwt.Issuer = Environment.GetEnvironmentVariable("Jwt__Issuer") ?? "AlejanBros";
+    options.Jwt.ExpirationHours = int.TryParse(Environment.GetEnvironmentVariable("Jwt__ExpirationHours"), out var hours) ? hours : 24;
 
     // Azure AI Search Settings
     options.Search.Endpoint = Environment.GetEnvironmentVariable("Search__Endpoint") ?? "";
@@ -82,5 +91,6 @@ builder.Services.AddSingleton<ICosmosDbService, CosmosDbService>();
 builder.Services.AddSingleton<IOpenAIService, OpenAIService>();
 builder.Services.AddSingleton<ISearchService, SearchService>();
 builder.Services.AddSingleton<IEmployeeMatcherService, EmployeeMatcherService>();
+builder.Services.AddSingleton<IAuthService, AuthService>();
 
 builder.Build().Run();

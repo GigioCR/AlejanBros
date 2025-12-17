@@ -8,6 +8,11 @@
     "CosmosDb__DatabaseName": "EmployeeDB",
     "CosmosDb__EmployeesContainer": "Employees",
     "CosmosDb__ProjectsContainer": "Projects",
+    "CosmosDb__UsersContainer": "Users",
+    
+    "Jwt__Secret": "YourSuperSecretKeyAtLeast32CharactersLong!",
+    "Jwt__Issuer": "AlejanBros",
+    "Jwt__ExpirationHours": "24",
     
     "Search__Endpoint": "https://YOUR_SEARCH_SERVICE.search.windows.net",
     "Search__ApiKey": "YOUR_SEARCH_API_KEY",
