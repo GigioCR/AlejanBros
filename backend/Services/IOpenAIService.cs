@@ -7,6 +7,7 @@ public enum QueryType
     MatchRequest,      // "Find React developers", "Build a team for..."
     EmployeeQuestion,  // "What is María's availability?", "Tell me about Carlos"
     FollowUp,          // "Why is she ranked higher?", "What about the second one?"
+    Social,            // "Hello", "Thank you", "Goodbye"
     OffTopic           // "What's the weather?"
 }
 
@@ -24,4 +25,5 @@ public interface IOpenAIService
     Task<bool> IsMatchingRelatedQueryAsync(string message);
     Task<QueryType> ClassifyQueryTypeAsync(string message);
     Task<string> AnswerEmployeeQuestionAsync(string question, IEnumerable<Employee> employees, List<ConversationMessage>? history = null);
+    Task<string> GenerateSocialResponseAsync(string message);
 }

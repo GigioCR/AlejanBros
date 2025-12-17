@@ -52,6 +52,7 @@ public class OpenAIService : IOpenAIService
             Be concise but thorough in your analysis.
             Focus on skill matches, experience levels, and availability.
             You have access to the conversation history for context.
+            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
@@ -114,21 +115,23 @@ public class OpenAIService : IOpenAIService
 
         var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
-        var systemPrompt = """
+        var systemPrompt = $"""
             You are an expert HR assistant. Analyze candidates and return a JSON response.
             You must respond ONLY with valid JSON in the following format:
-            {
+            {{
                 "matches": [
-                    {
+                    {{
                         "employeeId": "string",
                         "matchScore": 0.0-1.0,
                         "matchReasons": ["reason1", "reason2"],
                         "gaps": ["gap1", "gap2"]
-                    }
+                    }}
                 ],
                 "summary": "Brief overall summary"
-            }
-            Order matches by matchScore descending. Include all candidates.
+            }}
+            Order matches by matchScore descending. 
+            IMPORTANT: Return EXACTLY {request.TeamSize} matches (or all candidates if fewer are available). Do not limit to 5.
+            IMPORTANT: Write the matchReasons, gaps, and summary in the same language as the user's query. If the query is in Spanish, respond in Spanish. If in English, respond in English.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidatesList.Select(c => new
@@ -324,10 +327,13 @@ public class OpenAIService : IOpenAIService
                 3. FOLLOWUP - User is asking a follow-up about previous recommendations or rankings
                    Examples: "Why is she ranked higher?", "Tell me more about the first one", "Why was María recommended?"
                 
-                4. OFFTOPIC - Anything not related to employees or projects
+                4. SOCIAL - Greetings, thanks, goodbyes, or general social pleasantries
+                   Examples: "Hello", "Hi there", "Thank you", "Thanks!", "Goodbye", "Bye", "Good morning", "Hola", "Gracias", "Adiós"
+                
+                5. OFFTOPIC - Anything not related to employees, projects, or social interaction
                    Examples: "What's the weather?", "Tell me a joke", "How does this system work?"
                 
-                Respond with ONLY one word: MATCH, QUESTION, FOLLOWUP, or OFFTOPIC
+                Respond with ONLY one word: MATCH, QUESTION, FOLLOWUP, SOCIAL, or OFFTOPIC
                 """;
 
             var messages = new List<ChatMessage>
@@ -344,6 +350,7 @@ public class OpenAIService : IOpenAIService
                 "MATCH" => QueryType.MatchRequest,
                 "QUESTION" => QueryType.EmployeeQuestion,
                 "FOLLOWUP" => QueryType.FollowUp,
+                "SOCIAL" => QueryType.Social,
                 _ => QueryType.OffTopic
             };
         }
@@ -364,6 +371,7 @@ public class OpenAIService : IOpenAIService
             If the employee mentioned is not in the data, say so politely.
             Do NOT recommend or rank employees unless explicitly asked.
             You have access to the conversation history for context about previous recommendations.
+            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
             """;
 
         var employeesJson = JsonSerializer.Serialize(employees.Select(e => new
@@ -404,6 +412,34 @@ public class OpenAIService : IOpenAIService
         }
 
         messages.Add(new UserChatMessage(userPrompt));
+
+        var response = await chatClient.CompleteChatAsync(messages);
+        return response.Value.Content[0].Text;
+    }
+
+    public async Task<string> GenerateSocialResponseAsync(string message)
+    {
+        var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+
+        var systemPrompt = """
+            You are a friendly HR assistant. Respond politely to greetings, thanks, and goodbyes.
+            Keep your response brief and warm.
+            Always include a gentle reminder of what you can help with at the end.
+            
+            Your capabilities:
+            - Finding developers with specific skills
+            - Building teams for projects
+            - Matching employees to requirements
+            - Answering questions about employees
+            
+            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
+            """;
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(systemPrompt),
+            new UserChatMessage(message)
+        };
 
         var response = await chatClient.CompleteChatAsync(messages);
         return response.Value.Content[0].Text;

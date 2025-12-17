@@ -135,6 +135,19 @@ public class MatchFunctions
             // Handle based on query type
             switch (queryType)
             {
+                case QueryType.Social:
+                    // Handle greetings, thanks, goodbyes with a polite response
+                    var socialResponse = await _openAIService.GenerateSocialResponseAsync(chatRequest.Message);
+                    return new OkObjectResult(new ChatResponse
+                    {
+                        Message = chatRequest.Message,
+                        Response = socialResponse,
+                        Matches = new List<MatchResult>(),
+                        Summary = string.Empty,
+                        TotalCandidates = 0,
+                        Timestamp = DateTime.UtcNow
+                    });
+
                 case QueryType.OffTopic:
                     return new OkObjectResult(new ChatResponse
                     {
