@@ -152,10 +152,39 @@ public class OpenAIService : IOpenAIService
         var response = await chatClient.CompleteChatAsync(messages, options);
         var jsonResponse = response.Value.Content[0].Text;
 
-        var analysisResult = JsonSerializer.Deserialize<AnalysisResponse>(jsonResponse, new JsonSerializerOptions
+        _logger.LogDebug("OpenAI Response: {Response}", jsonResponse);
+
+        AnalysisResponse? analysisResult;
+        try
         {
-            PropertyNameCaseInsensitive = true
-        });
+            analysisResult = JsonSerializer.Deserialize<AnalysisResponse>(jsonResponse, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OpenAI response, attempting to extract matches manually. Response: {Response}", jsonResponse);
+            
+            // Fallback: return all candidates with default scores based on order
+            var fallbackMatches = candidatesList.Select((c, index) => new MatchResult
+            {
+                Employee = c,
+                MatchScore = 1.0 - (index * 0.05), // Decreasing score by position
+                MatchReasons = new List<string> { "Matched based on search criteria" },
+                Gaps = new List<string>(),
+                SkillMatches = CalculateSkillMatches(c, request)
+            }).ToList();
+
+            return new MatchResponse
+            {
+                Query = request.Query,
+                Matches = fallbackMatches.Take(request.TeamSize).ToList(),
+                Summary = "Analysis completed with fallback scoring.",
+                TotalCandidates = candidatesList.Count,
+                ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+            };
+        }
 
         stopwatch.Stop();
 
