@@ -115,22 +115,22 @@ public class OpenAIService : IOpenAIService
 
         var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
-        var systemPrompt = $"""
+        var systemPrompt = $$"""
             You are an expert HR assistant. Analyze candidates and return a JSON response.
             You must respond ONLY with valid JSON in the following format:
-            {{
+            {
                 "matches": [
-                    {{
+                    {
                         "employeeId": "string",
                         "matchScore": 0.0-1.0,
                         "matchReasons": ["reason1", "reason2"],
                         "gaps": ["gap1", "gap2"]
-                    }}
+                    }
                 ],
                 "summary": "Brief overall summary"
-            }}
+            }
             Order matches by matchScore descending. 
-            IMPORTANT: Return EXACTLY {request.TeamSize} matches (or all candidates if fewer are available). Do not limit to 5.
+            IMPORTANT: Return EXACTLY {{request.TeamSize}} matches (or all candidates if fewer are available). Do not limit to 5.
             IMPORTANT: Write the matchReasons, gaps, and summary in the same language as the user's query. If the query is in Spanish, respond in Spanish. If in English, respond in English.
             """;
 

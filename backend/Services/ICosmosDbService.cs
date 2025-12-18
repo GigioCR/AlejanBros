@@ -7,6 +7,7 @@ public interface ICosmosDbService
     // Employee operations
     Task<Employee?> GetEmployeeAsync(string id);
     Task<IEnumerable<Employee>> GetAllEmployeesAsync();
+    Task<PaginatedResult<Employee>> GetEmployeesAsync(int page = 1, int pageSize = 10);
     Task<Employee> CreateEmployeeAsync(Employee employee);
     Task<Employee> UpdateEmployeeAsync(Employee employee);
     Task DeleteEmployeeAsync(string id);
@@ -14,7 +15,7 @@ public interface ICosmosDbService
 
     // Project operations
     Task<Project?> GetProjectAsync(string id);
-    Task<IEnumerable<Project>> GetAllProjectsAsync();
+    Task<PaginatedResult<Project>> GetProjectsAsync(int page = 1, int pageSize = 10);
     Task<Project> CreateProjectAsync(Project project);
     Task<Project> UpdateProjectAsync(Project project);
     Task DeleteProjectAsync(string id);

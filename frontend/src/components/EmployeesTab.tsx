@@ -1,18 +1,30 @@
 import { useState, useEffect } from 'react';
-import { api, type Employee } from '../lib/api';
+import { api, type Employee, type PaginatedResult } from '../lib/api';
 import { Plus, Trash2, Edit, User, Briefcase, Star, RefreshCw } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 export function EmployeesTab() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [paginationInfo, setPaginationInfo] = useState<Omit<PaginatedResult<Employee>, 'items'> | null>(null);
 
-  const loadEmployees = async () => {
+  const loadEmployees = async (currentPage = page, currentPageSize = pageSize) => {
     setIsLoading(true);
     setError('');
     try {
-      const data = await api.getEmployees();
-      setEmployees(data);
+      const data = await api.getEmployees(currentPage, currentPageSize);
+      setEmployees(data.items);
+      setPaginationInfo({
+        page: data.page,
+        pageSize: data.pageSize,
+        totalCount: data.totalCount,
+        totalPages: data.totalPages,
+        hasNextPage: data.hasNextPage,
+        hasPreviousPage: data.hasPreviousPage,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load employees');
     } finally {
@@ -24,6 +36,17 @@ export function EmployeesTab() {
     loadEmployees();
   }, []);
 
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    loadEmployees(newPage, pageSize);
+  };
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setPage(1);
+    loadEmployees(1, newPageSize);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this employee?')) return;
     try {
@@ -31,6 +54,28 @@ export function EmployeesTab() {
       setEmployees(employees.filter(e => e.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete employee');
+    }
+  };
+
+  const getAvailabilityLabel = (availability: number | string): string => {
+    const statusMap: Record<number, string> = {
+      0: 'Available',
+      1: 'Partially Available',
+      2: 'Unavailable',
+    };
+    if (typeof availability === 'number') {
+      return statusMap[availability] || 'Unknown';
+    }
+    return String(availability) || 'Unknown';
+  };
+
+  const getAvailabilityStyle = (availability: number | string): string => {
+    const status = typeof availability === 'number' ? availability : parseInt(String(availability), 10);
+    switch (status) {
+      case 0: return 'bg-green-500/20 text-green-400';
+      case 1: return 'bg-yellow-500/20 text-yellow-400';
+      case 2: return 'bg-red-500/20 text-red-400';
+      default: return 'bg-gray-500/20 text-gray-400';
     }
   };
 
@@ -51,7 +96,7 @@ export function EmployeesTab() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadEmployees}
+            onClick={() => loadEmployees()}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
@@ -138,20 +183,27 @@ export function EmployeesTab() {
               <div className="mt-4 pt-3 border-t border-gray-700">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Availability</span>
-                  <span className={`font-medium ${employee.availability >= 50 ? 'text-green-400' : 'text-yellow-400'}`}>
-                    {employee.availability}%
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getAvailabilityStyle(employee.availability)}`}>
+                    {getAvailabilityLabel(employee.availability)}
                   </span>
-                </div>
-                <div className="mt-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${employee.availability >= 50 ? 'bg-green-500' : 'bg-yellow-500'}`}
-                    style={{ width: `${employee.availability}%` }}
-                  />
                 </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {paginationInfo && (
+        <Pagination
+          page={paginationInfo.page}
+          pageSize={paginationInfo.pageSize}
+          totalCount={paginationInfo.totalCount}
+          totalPages={paginationInfo.totalPages}
+          hasNextPage={paginationInfo.hasNextPage}
+          hasPreviousPage={paginationInfo.hasPreviousPage}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+        />
       )}
     </div>
   );

@@ -28,17 +28,22 @@ public class EmployeeFunctions
     }
 
     [Function("GetEmployees")]
-    [OpenApiOperation(operationId: "GetEmployees", tags: new[] { "Employees" }, Summary = "Get all employees", Description = "Returns a list of all employees in the system")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(IEnumerable<Employee>), Description = "List of employees")]
+    [OpenApiOperation(operationId: "GetEmployees", tags: new[] { "Employees" }, Summary = "Get employees with pagination", Description = "Returns a paginated list of employees")]
+    [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number (default: 1)")]
+    [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Items per page (default: 10, max: 50)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(PaginatedResult<Employee>), Description = "Paginated list of employees")]
     public async Task<IActionResult> GetEmployees(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "employees")] HttpRequest req)
     {
-        _logger.LogInformation("Getting all employees");
+        _logger.LogInformation("Getting employees with pagination");
 
         try
         {
-            var employees = await _cosmosDbService.GetAllEmployeesAsync();
-            return new OkObjectResult(employees);
+            var page = int.TryParse(req.Query["page"], out var p) ? Math.Max(1, p) : 1;
+            var pageSize = int.TryParse(req.Query["pageSize"], out var ps) ? Math.Clamp(ps, 1, 50) : 10;
+
+            var result = await _cosmosDbService.GetEmployeesAsync(page, pageSize);
+            return new OkObjectResult(result);
         }
         catch (Exception ex)
         {

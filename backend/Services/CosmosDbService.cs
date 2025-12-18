@@ -58,6 +58,37 @@ public class CosmosDbService : ICosmosDbService
         return employees;
     }
 
+    public async Task<PaginatedResult<Employee>> GetEmployeesAsync(int page = 1, int pageSize = 10)
+    {
+        // Get total count
+        var countQuery = new QueryDefinition("SELECT VALUE COUNT(1) FROM c");
+        var countIterator = _employeesContainer.GetItemQueryIterator<int>(countQuery);
+        var countResponse = await countIterator.ReadNextAsync();
+        var totalCount = countResponse.FirstOrDefault();
+
+        // Get paginated items with ORDER BY for consistent ordering
+        var offset = (page - 1) * pageSize;
+        var query = new QueryDefinition("SELECT * FROM c ORDER BY c.name OFFSET @offset LIMIT @limit")
+            .WithParameter("@offset", offset)
+            .WithParameter("@limit", pageSize);
+
+        var employees = new List<Employee>();
+        using var iterator = _employeesContainer.GetItemQueryIterator<Employee>(query);
+        while (iterator.HasMoreResults)
+        {
+            var response = await iterator.ReadNextAsync();
+            employees.AddRange(response);
+        }
+
+        return new PaginatedResult<Employee>
+        {
+            Items = employees,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
+    }
+
     public async Task<Employee> CreateEmployeeAsync(Employee employee)
     {
         employee.Id = string.IsNullOrEmpty(employee.Id) ? Guid.NewGuid().ToString() : employee.Id;
@@ -127,11 +158,21 @@ public class CosmosDbService : ICosmosDbService
         }
     }
 
-    public async Task<IEnumerable<Project>> GetAllProjectsAsync()
+    public async Task<PaginatedResult<Project>> GetProjectsAsync(int page = 1, int pageSize = 10)
     {
-        var query = new QueryDefinition("SELECT * FROM c");
-        var projects = new List<Project>();
+        // Get total count
+        var countQuery = new QueryDefinition("SELECT VALUE COUNT(1) FROM c");
+        var countIterator = _projectsContainer.GetItemQueryIterator<int>(countQuery);
+        var countResponse = await countIterator.ReadNextAsync();
+        var totalCount = countResponse.FirstOrDefault();
 
+        // Get paginated items with ORDER BY for consistent ordering
+        var offset = (page - 1) * pageSize;
+        var query = new QueryDefinition("SELECT * FROM c ORDER BY c.name OFFSET @offset LIMIT @limit")
+            .WithParameter("@offset", offset)
+            .WithParameter("@limit", pageSize);
+
+        var projects = new List<Project>();
         using var iterator = _projectsContainer.GetItemQueryIterator<Project>(query);
         while (iterator.HasMoreResults)
         {
@@ -139,7 +180,13 @@ public class CosmosDbService : ICosmosDbService
             projects.AddRange(response);
         }
 
-        return projects;
+        return new PaginatedResult<Project>
+        {
+            Items = projects,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount
+        };
     }
 
     public async Task<Project> CreateProjectAsync(Project project)

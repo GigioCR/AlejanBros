@@ -25,17 +25,22 @@ public class ProjectFunctions
     }
 
     [Function("GetProjects")]
-    [OpenApiOperation(operationId: "GetProjects", tags: new[] { "Projects" }, Summary = "Get all projects", Description = "Returns a list of all projects")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(IEnumerable<Project>), Description = "List of projects")]
+    [OpenApiOperation(operationId: "GetProjects", tags: new[] { "Projects" }, Summary = "Get projects with pagination", Description = "Returns a paginated list of projects")]
+    [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number (default: 1)")]
+    [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Items per page (default: 10, max: 50)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(PaginatedResult<Project>), Description = "Paginated list of projects")]
     public async Task<IActionResult> GetProjects(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "projects")] HttpRequest req)
     {
-        _logger.LogInformation("Getting all projects");
+        _logger.LogInformation("Getting projects with pagination");
 
         try
         {
-            var projects = await _cosmosDbService.GetAllProjectsAsync();
-            return new OkObjectResult(projects);
+            var page = int.TryParse(req.Query["page"], out var p) ? Math.Max(1, p) : 1;
+            var pageSize = int.TryParse(req.Query["pageSize"], out var ps) ? Math.Clamp(ps, 1, 50) : 10;
+
+            var result = await _cosmosDbService.GetProjectsAsync(page, pageSize);
+            return new OkObjectResult(result);
         }
         catch (Exception ex)
         {

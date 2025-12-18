@@ -1,18 +1,30 @@
 import { useState, useEffect } from 'react';
-import { api, type Project } from '../lib/api';
+import { api, type Project, type PaginatedResult } from '../lib/api';
 import { Plus, Trash2, Edit, FolderKanban, RefreshCw, Users, Calendar } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 export function ProjectsTab() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [paginationInfo, setPaginationInfo] = useState<Omit<PaginatedResult<Project>, 'items'> | null>(null);
 
-  const loadProjects = async () => {
+  const loadProjects = async (currentPage = page, currentPageSize = pageSize) => {
     setIsLoading(true);
     setError('');
     try {
-      const data = await api.getProjects();
-      setProjects(data);
+      const data = await api.getProjects(currentPage, currentPageSize);
+      setProjects(data.items);
+      setPaginationInfo({
+        page: data.page,
+        pageSize: data.pageSize,
+        totalCount: data.totalCount,
+        totalPages: data.totalPages,
+        hasNextPage: data.hasNextPage,
+        hasPreviousPage: data.hasPreviousPage,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load projects');
     } finally {
@@ -24,6 +36,17 @@ export function ProjectsTab() {
     loadProjects();
   }, []);
 
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    loadProjects(newPage, pageSize);
+  };
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setPage(1);
+    loadProjects(1, newPageSize);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this project?')) return;
     try {
@@ -34,11 +57,26 @@ export function ProjectsTab() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
+  const getStatusLabel = (status: string | number): string => {
+    const statusMap: Record<number, string> = {
+      0: 'Planning',
+      1: 'Active',
+      2: 'OnHold',
+      3: 'Completed',
+    };
+    if (typeof status === 'number') {
+      return statusMap[status] || 'Unknown';
+    }
+    return status || 'Unknown';
+  };
+
+  const getStatusColor = (status: string | number) => {
+    const statusStr = typeof status === 'number' ? getStatusLabel(status) : status;
+    switch (statusStr?.toLowerCase()) {
       case 'active': return 'bg-green-500/20 text-green-400';
       case 'planning': return 'bg-blue-500/20 text-blue-400';
       case 'completed': return 'bg-gray-500/20 text-gray-400';
+      case 'onhold':
       case 'on-hold': return 'bg-yellow-500/20 text-yellow-400';
       default: return 'bg-gray-500/20 text-gray-400';
     }
@@ -61,7 +99,7 @@ export function ProjectsTab() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadProjects}
+            onClick={() => loadProjects()}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
@@ -97,7 +135,7 @@ export function ProjectsTab() {
                 <div>
                   <h3 className="font-semibold text-white text-lg">{project.name}</h3>
                   <span className={`inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
-                    {project.status || 'Unknown'}
+                    {getStatusLabel(project.status)}
                   </span>
                 </div>
                 <div className="flex gap-1">
@@ -135,7 +173,7 @@ export function ProjectsTab() {
                       key={i}
                       className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full"
                     >
-                      {skill}
+                      {skill.name}
                     </span>
                   ))}
                   {project.requiredSkills.length > 4 && (
@@ -148,6 +186,19 @@ export function ProjectsTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {paginationInfo && (
+        <Pagination
+          page={paginationInfo.page}
+          pageSize={paginationInfo.pageSize}
+          totalCount={paginationInfo.totalCount}
+          totalPages={paginationInfo.totalPages}
+          hasNextPage={paginationInfo.hasNextPage}
+          hasPreviousPage={paginationInfo.hasPreviousPage}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+        />
       )}
     </div>
   );

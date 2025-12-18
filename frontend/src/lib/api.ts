@@ -22,20 +22,36 @@ export interface Employee {
   jobTitle?: string;
   department: string;
   skills: { name: string; level: number }[];
-  availability: number;
+  availability: number | string;
   yearsOfExperience: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RequiredSkill {
+  name: string;
+  minimumLevel: number;
+  required: boolean;
 }
 
 export interface Project {
   id: string;
   name: string;
   description: string;
-  requiredSkills: string[];
+  requiredSkills: RequiredSkill[];
   teamSize: number;
-  status: string;
+  status: string | number;
   createdAt: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }
 
 export interface MatchResult {
@@ -134,8 +150,8 @@ class ApiClient {
   }
 
   // Employees
-  async getEmployees(): Promise<Employee[]> {
-    return this.request('/employees');
+  async getEmployees(page: number = 1, pageSize: number = 10): Promise<PaginatedResult<Employee>> {
+    return this.request(`/employees?page=${page}&pageSize=${pageSize}`);
   }
 
   async getEmployee(id: string): Promise<Employee> {
@@ -161,8 +177,8 @@ class ApiClient {
   }
 
   // Projects
-  async getProjects(): Promise<Project[]> {
-    return this.request('/projects');
+  async getProjects(page: number = 1, pageSize: number = 10): Promise<PaginatedResult<Project>> {
+    return this.request(`/projects?page=${page}&pageSize=${pageSize}`);
   }
 
   async getProject(id: string): Promise<Project> {
