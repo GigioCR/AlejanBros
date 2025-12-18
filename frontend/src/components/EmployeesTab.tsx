@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api, type Employee, type PaginatedResult } from '../lib/api';
-import { Plus, Trash2, Edit, User, Briefcase, Star, RefreshCw } from 'lucide-react';
+import { Plus, User, RefreshCw } from 'lucide-react';
 import { Pagination } from './Pagination';
+import { EmployeeCard } from './EmployeeCard';
 
 export function EmployeesTab() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -57,28 +58,6 @@ export function EmployeesTab() {
     }
   };
 
-  const getAvailabilityLabel = (availability: number | string): string => {
-    const statusMap: Record<number, string> = {
-      0: 'Available',
-      1: 'Partially Available',
-      2: 'Unavailable',
-    };
-    if (typeof availability === 'number') {
-      return statusMap[availability] || 'Unknown';
-    }
-    return String(availability) || 'Unknown';
-  };
-
-  const getAvailabilityStyle = (availability: number | string): string => {
-    const status = typeof availability === 'number' ? availability : parseInt(String(availability), 10);
-    switch (status) {
-      case 0: return 'bg-green-500/20 text-green-400';
-      case 1: return 'bg-yellow-500/20 text-yellow-400';
-      case 2: return 'bg-red-500/20 text-red-400';
-      default: return 'bg-gray-500/20 text-gray-400';
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -124,71 +103,11 @@ export function EmployeesTab() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {employees.map((employee) => (
-            <div
+            <EmployeeCard
               key={employee.id}
-              className="bg-gray-800 rounded-xl border border-gray-700 p-5 hover:border-gray-600 transition-colors"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    {employee.name?.charAt(0) || 'E'}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">{employee.name}</h3>
-                    <p className="text-sm text-gray-400">{employee.title}</p>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-lg transition-colors">
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(employee.id)}
-                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-gray-400">
-                  <Briefcase className="w-4 h-4" />
-                  <span>{employee.department}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-400">
-                  <Star className="w-4 h-4" />
-                  <span>{employee.yearsOfExperience} years experience</span>
-                </div>
-              </div>
-
-              {employee.skills && employee.skills.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-1">
-                  {employee.skills.slice(0, 4).map((skill, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full"
-                    >
-                      {skill.name}
-                    </span>
-                  ))}
-                  {employee.skills.length > 4 && (
-                    <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded-full">
-                      +{employee.skills.length - 4} more
-                    </span>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-4 pt-3 border-t border-gray-700">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Availability</span>
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getAvailabilityStyle(employee.availability)}`}>
-                    {getAvailabilityLabel(employee.availability)}
-                  </span>
-                </div>
-              </div>
-            </div>
+              employee={employee}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}

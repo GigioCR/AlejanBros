@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { LogOut, Users, FolderKanban, Sparkles } from 'lucide-react';
 import { EmployeesTab } from '../components/EmployeesTab';
 import { ProjectsTab } from '../components/ProjectsTab';
-import { ChatTab } from '../components/ChatTab';
+import { AiMatchesTab } from '../components/AiMatchesTab';
 
 type TabType = 'employees' | 'projects' | 'matching';
 
@@ -80,7 +80,7 @@ export function DashboardPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'employees' && <EmployeesTab />}
         {activeTab === 'projects' && <ProjectsTab />}
-        {activeTab === 'matching' && <ChatTab />}
+        {activeTab === 'matching' && <AiMatchesTab />}
       </main>
     </div>
   );

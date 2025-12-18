@@ -19,6 +19,8 @@ public class JwtMiddleware : IFunctionsWorkerMiddleware
         "/api/auth/login",
         "/api/swagger",
         "/api/openapi",
+        "/api/setup",
+        "/api/health"
     };
 
     public JwtMiddleware(IAuthService authService, ILogger<JwtMiddleware> logger)

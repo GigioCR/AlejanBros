@@ -132,6 +132,13 @@ public class OpenAIService : IOpenAIService
             Order matches by matchScore descending. 
             IMPORTANT: Return EXACTLY {{request.TeamSize}} matches (or all candidates if fewer are available). Do not limit to 5.
             IMPORTANT: Write the matchReasons, gaps, and summary in the same language as the user's query. If the query is in Spanish, respond in Spanish. If in English, respond in English.
+            
+            CRITICAL RULES FOR GAPS:
+            - "gaps" should ONLY contain skills that are REQUIRED by the project but MISSING from the candidate.
+            - If a candidate has extra skills beyond what the project requires, that is NOT a gap - it's a bonus.
+            - Having additional skills the project doesn't need should be mentioned positively in matchReasons, not as gaps.
+            - A gap is strictly: a skill listed in Required Skills or Tech Stack that the candidate does NOT have.
+            - If the candidate has all required skills, gaps should be an empty array.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidatesList.Select(c => new
