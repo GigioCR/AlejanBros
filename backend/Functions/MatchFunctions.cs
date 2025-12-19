@@ -191,16 +191,18 @@ public class MatchFunctions
                         AvailabilityRequired = chatRequest.AvailabilityRequired ?? true
                     };
 
-                    // Get structured matches with scores
+                    // Single API call that returns both matches and analysis
                     var matchResponse = await _matcherService.FindMatchesAsync(matchRequest);
 
-                    // Also generate a conversational analysis for context, with conversation history
-                    var analysis = await _openAIService.GenerateMatchAnalysisAsync(matchRequest, employees, conversationHistory);
+                    // Build response text: use recommendation if no good matches, otherwise use analysis
+                    var responseText = matchResponse.HasSufficientMatches 
+                        ? matchResponse.Analysis 
+                        : (matchResponse.Recommendation + "\n\n---\n\n" + matchResponse.Analysis);
 
                     return new OkObjectResult(new ChatResponse
                     {
                         Message = chatRequest.Message,
-                        Response = analysis,
+                        Response = responseText,
                         Matches = matchResponse.Matches,
                         Summary = matchResponse.Summary,
                         TotalCandidates = matchResponse.TotalCandidates,

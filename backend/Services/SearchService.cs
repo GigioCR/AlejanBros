@@ -91,6 +91,30 @@ public class SearchService : ISearchService
         _logger.LogInformation("Removed employee {Id} from search index", employeeId);
     }
 
+    public async Task ClearAndRebuildIndexAsync(IEnumerable<Employee> employees)
+    {
+        _logger.LogInformation("Clearing and rebuilding search index...");
+        
+        // Delete the index and recreate it
+        try
+        {
+            await _indexClient.DeleteIndexAsync(_settings.IndexName);
+            _logger.LogInformation("Deleted existing index '{IndexName}'", _settings.IndexName);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            _logger.LogInformation("Index '{IndexName}' did not exist, creating new one", _settings.IndexName);
+        }
+        
+        // Recreate the index
+        await InitializeIndexAsync();
+        
+        // Re-index all employees
+        await IndexEmployeesAsync(employees);
+        
+        _logger.LogInformation("Search index rebuilt successfully with {Count} employees", employees.Count());
+    }
+
     public async Task<IEnumerable<EmployeeSearchDocument>> SearchAsync(string query, int top = 10)
     {
         var options = new SearchOptions

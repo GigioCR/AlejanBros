@@ -47,27 +47,30 @@ public class AdminFunctions
     }
 
     [Function("ReindexAllEmployees")]
-    [OpenApiOperation(operationId: "ReindexAllEmployees", tags: new[] { "Admin" }, Summary = "Reindex all employees", Description = "Reindexes all employees in Azure AI Search")]
+    [OpenApiOperation(operationId: "ReindexAllEmployees", tags: new[] { "Admin" }, Summary = "Reindex all employees", Description = "Clears and rebuilds the Azure AI Search index with current Cosmos DB data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Reindexing completed")]
     public async Task<IActionResult> ReindexAllEmployees(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "setup/reindex")] HttpRequest req)
     {
-        _logger.LogInformation("Reindexing all employees");
+        _logger.LogInformation("Clearing and rebuilding search index");
 
         try
         {
             var employees = await _cosmosDbService.GetAllEmployeesAsync();
-            await _searchService.IndexEmployeesAsync(employees);
+            var employeeList = employees.ToList();
+            
+            // Clear the index and rebuild with fresh data
+            await _searchService.ClearAndRebuildIndexAsync(employeeList);
 
             return new OkObjectResult(new
             {
-                message = "Reindexing completed",
-                employeesIndexed = employees.Count()
+                message = "Search index cleared and rebuilt successfully",
+                employeesIndexed = employeeList.Count
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error reindexing employees");
+            _logger.LogError(ex, "Error rebuilding search index");
             return new StatusCodeResult(500);
         }
     }

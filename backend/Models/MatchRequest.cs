@@ -70,9 +70,18 @@ public class MatchResponse
     [JsonPropertyName("summary")]
     public string Summary { get; set; } = string.Empty;
 
+    [JsonPropertyName("analysis")]
+    public string Analysis { get; set; } = string.Empty;
+
     [JsonPropertyName("totalCandidates")]
     public int TotalCandidates { get; set; }
 
     [JsonPropertyName("processingTimeMs")]
     public long ProcessingTimeMs { get; set; }
+
+    [JsonPropertyName("hasSufficientMatches")]
+    public bool HasSufficientMatches { get; set; } = true;
+
+    [JsonPropertyName("recommendation")]
+    public string? Recommendation { get; set; }
 }

@@ -66,6 +66,9 @@ export interface MatchResponse {
   matches: MatchResult[];
   query: string;
   totalCandidates: number;
+  analysis?: string;
+  hasSufficientMatches?: boolean;
+  recommendation?: string;
 }
 
 export interface ChatResponse {
@@ -112,7 +115,8 @@ class ApiClient {
       headers,
     });
 
-    if (response.status === 401) {
+    // Only redirect on 401 if NOT on auth endpoints (login/register expect 401 for invalid credentials)
+    if (response.status === 401 && !endpoint.startsWith('/auth/')) {
       this.setToken(null);
       window.location.href = '/login';
       throw new Error('Unauthorized');

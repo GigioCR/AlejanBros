@@ -48,11 +48,13 @@ public class OpenAIService : IOpenAIService
 
         var systemPrompt = """
             You are an expert HR assistant specializing in matching employees to projects.
+            
+            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+            
             Analyze the project requirements and candidate profiles to provide recommendations.
             Be concise but thorough in your analysis.
             Focus on skill matches, experience levels, and availability.
             You have access to the conversation history for context.
-            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
@@ -117,28 +119,47 @@ public class OpenAIService : IOpenAIService
 
         var systemPrompt = $$"""
             You are an expert HR assistant. Analyze candidates and return a JSON response.
+            
+            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+            
             You must respond ONLY with valid JSON in the following format:
             {
                 "matches": [
                     {
-                        "employeeId": "string",
+                        "employeeId": "string (MUST be the exact Id field from the candidate data)",
                         "matchScore": 0.0-1.0,
                         "matchReasons": ["reason1", "reason2"],
                         "gaps": ["gap1", "gap2"]
                     }
                 ],
-                "summary": "Brief overall summary"
+                "summary": "Brief overall summary",
+                "analysis": "Detailed markdown analysis explaining your ranking decisions, why each candidate was selected, team composition recommendations, and any concerns. Use headers and bullet points for readability. Use employee NAMES only in this field, never IDs."
             }
+            
+            CRITICAL: The "employeeId" field MUST contain the EXACT "Id" value from the candidate JSON data (e.g., a GUID like "abc123-def-456"). Do NOT use the employee's name in employeeId.
+            NOTE: In the "analysis" and "summary" text fields, use employee NAMES (e.g., "Isabella Moreno"), NOT IDs. IDs are only for the employeeId field.
+            
             Order matches by matchScore descending. 
             IMPORTANT: Return EXACTLY {{request.TeamSize}} matches (or all candidates if fewer are available). Do not limit to 5.
-            IMPORTANT: Write the matchReasons, gaps, and summary in the same language as the user's query. If the query is in Spanish, respond in Spanish. If in English, respond in English.
+            
+            MATCH SCORE GUIDELINES:
+            - 0.7-1.0: Strong match - candidate has most/all required skills
+            - 0.5-0.69: Moderate match - candidate has some required skills but notable gaps
+            - 0.3-0.49: Weak match - candidate lacks many required skills
+            - 0.0-0.29: Poor match - candidate is not suitable for this project
+            
+            Be honest with scores. If candidates don't have the required skills, give them low scores.
             
             CRITICAL RULES FOR GAPS:
-            - "gaps" should ONLY contain skills that are REQUIRED by the project but MISSING from the candidate.
+            - "gaps" should ONLY contain skills that are EXPLICITLY MENTIONED in the user's query, Required Skills, or Tech Stack fields above.
+            - Do NOT infer or assume additional technologies. Only reference what the user explicitly asked for.
+            - If the user only mentions "Android/Kotlin", do NOT add Firebase, Jetpack Compose, or any other technology as a gap unless the user explicitly mentioned them.
             - If a candidate has extra skills beyond what the project requires, that is NOT a gap - it's a bonus.
             - Having additional skills the project doesn't need should be mentioned positively in matchReasons, not as gaps.
-            - A gap is strictly: a skill listed in Required Skills or Tech Stack that the candidate does NOT have.
-            - If the candidate has all required skills, gaps should be an empty array.
+            - A gap is strictly: a skill EXPLICITLY listed by the user that the candidate does NOT have.
+            - If the candidate has all explicitly required skills, gaps should be an empty array.
+            
+            CRITICAL: Only evaluate candidates against what the user EXPLICITLY requested. Do not expand the requirements with related technologies.
             """;
 
         var candidatesJson = JsonSerializer.Serialize(candidatesList.Select(c => new
@@ -170,7 +191,8 @@ public class OpenAIService : IOpenAIService
 
         var options = new ChatCompletionOptions
         {
-            ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat()
+            ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat(),
+            Temperature = 0f // More deterministic responses for consistent scoring
         };
 
         var response = await chatClient.CompleteChatAsync(messages, options);
@@ -215,27 +237,62 @@ public class OpenAIService : IOpenAIService
         var matchResults = new List<MatchResult>();
         foreach (var match in analysisResult?.Matches ?? new List<AnalysisMatch>())
         {
+            // Try to find by ID first, then fallback to name matching (in case AI returns name instead of ID)
             var employee = candidatesList.FirstOrDefault(c => c.Id == match.EmployeeId);
-            if (employee != null)
+            
+            if (employee == null)
             {
-                matchResults.Add(new MatchResult
+                // Fallback: try matching by name (case-insensitive)
+                employee = candidatesList.FirstOrDefault(c => 
+                    c.Name.Equals(match.EmployeeId, StringComparison.OrdinalIgnoreCase));
+                
+                if (employee == null)
                 {
-                    Employee = employee,
-                    MatchScore = match.MatchScore,
-                    MatchReasons = match.MatchReasons,
-                    Gaps = match.Gaps,
-                    SkillMatches = CalculateSkillMatches(employee, request)
-                });
+                    _logger.LogWarning("Employee not found for ID/Name: {EmployeeId}. Available IDs: {AvailableIds}", 
+                        match.EmployeeId, 
+                        string.Join(", ", candidatesList.Select(c => $"{c.Id} ({c.Name})")));
+                    continue;
+                }
             }
+            
+            matchResults.Add(new MatchResult
+            {
+                Employee = employee,
+                MatchScore = match.MatchScore,
+                MatchReasons = match.MatchReasons,
+                Gaps = match.Gaps,
+                SkillMatches = CalculateSkillMatches(employee, request)
+            });
         }
 
+        var orderedMatches = matchResults.OrderByDescending(m => m.MatchScore).ToList();
+        
+        // Threshold check: if best match score is below 0.5, recommend training/external hiring
+        const double MinimumAcceptableScore = 0.5;
+        var bestScore = orderedMatches.FirstOrDefault()?.MatchScore ?? 0;
+        var hasSufficientMatches = bestScore >= MinimumAcceptableScore;
+        
+        string? recommendation = null;
+        string analysis = analysisResult?.Analysis ?? string.Empty;
+        
+        if (!hasSufficientMatches)
+        {
+            recommendation = "Based on the analysis, there are no employees that are a strong fit for this project's requirements. We recommend:\n\n" +
+                           "1. **Training existing employees** - Consider upskilling team members in the required technologies\n" +
+                           "2. **External contracting** - Hire contractors or consultants with the specific expertise needed\n" +
+                           "3. **Revising requirements** - If possible, adjust the project's tech stack to better align with available skills";
+        }
+        
         return new MatchResponse
         {
             Query = request.Query,
-            Matches = matchResults.OrderByDescending(m => m.MatchScore).ToList(),
+            Matches = orderedMatches,
             Summary = analysisResult?.Summary ?? "Analysis complete.",
+            Analysis = analysis,
             TotalCandidates = candidatesList.Count,
-            ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+            ProcessingTimeMs = stopwatch.ElapsedMilliseconds,
+            HasSufficientMatches = hasSufficientMatches,
+            Recommendation = recommendation
         };
     }
 
@@ -374,11 +431,13 @@ public class OpenAIService : IOpenAIService
 
         var systemPrompt = """
             You are an HR assistant. Answer the user's question about employees based on the provided employee data.
+            
+            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+            
             Be concise and helpful. Only answer questions about the employees in the data provided.
             If the employee mentioned is not in the data, say so politely.
             Do NOT recommend or rank employees unless explicitly asked.
             You have access to the conversation history for context about previous recommendations.
-            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
             """;
 
         var employeesJson = JsonSerializer.Serialize(employees.Select(e => new
@@ -430,6 +489,9 @@ public class OpenAIService : IOpenAIService
 
         var systemPrompt = """
             You are a friendly HR assistant. Respond politely to greetings, thanks, and goodbyes.
+            
+            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+            
             Keep your response brief and warm.
             Always include a gentle reminder of what you can help with at the end.
             
@@ -438,8 +500,6 @@ public class OpenAIService : IOpenAIService
             - Building teams for projects
             - Matching employees to requirements
             - Answering questions about employees
-            
-            IMPORTANT: Always respond in the same language the user writes in. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
             """;
 
         var messages = new List<ChatMessage>
@@ -456,6 +516,7 @@ public class OpenAIService : IOpenAIService
     {
         public List<AnalysisMatch> Matches { get; set; } = new();
         public string Summary { get; set; } = string.Empty;
+        public string Analysis { get; set; } = string.Empty;
     }
 
     private class AnalysisMatch
