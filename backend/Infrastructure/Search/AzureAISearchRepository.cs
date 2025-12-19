@@ -37,10 +37,7 @@ public class AzureAISearchRepository : ISearchRepository
     {
         try
         {
-            var fieldBuilder = new FieldBuilder();
-            var searchFields = fieldBuilder.Build(typeof(EmployeeSearchDocument));
-
-            var definition = new SearchIndex(_indexName, searchFields);
+            var definition = BuildIndexDefinition();
             await _indexClient.CreateOrUpdateIndexAsync(definition);
             _logger.LogInformation("Search index {IndexName} initialized", _indexName);
         }
@@ -49,6 +46,29 @@ public class AzureAISearchRepository : ISearchRepository
             _logger.LogError(ex, "Error initializing search index");
             throw;
         }
+    }
+
+    private SearchIndex BuildIndexDefinition()
+    {
+        var fieldBuilder = new FieldBuilder();
+        var searchFields = fieldBuilder.Build(typeof(EmployeeSearchDocument));
+
+        var definition = new SearchIndex(_indexName, searchFields)
+        {
+            VectorSearch = new VectorSearch
+            {
+                Algorithms =
+                {
+                    new HnswAlgorithmConfiguration("vector-algorithm")
+                },
+                Profiles =
+                {
+                    new VectorSearchProfile("vector-profile", "vector-algorithm")
+                }
+            }
+        };
+
+        return definition;
     }
 
     public async Task<IEnumerable<string>> HybridSearchAsync(string query, float[] embedding, int top = 10)
@@ -61,6 +81,12 @@ public class AzureAISearchRepository : ISearchRepository
                 Select = { "id" }
             };
 
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                // Include embedding so we can verify vectors are present in returned documents.
+                searchOptions.Select.Add("embedding");
+            }
+
             var vectorQuery = new VectorizedQuery(embedding)
             {
                 KNearestNeighborsCount = top,
@@ -72,10 +98,25 @@ public class AzureAISearchRepository : ISearchRepository
 
             var response = await _searchClient.SearchAsync<EmployeeSearchDocument>(query, searchOptions);
             var employeeIds = new List<string>();
+            var resultsWithEmbedding = 0;
 
             await foreach (var result in response.Value.GetResultsAsync())
             {
                 employeeIds.Add(result.Document.Id);
+
+                if (_logger.IsEnabled(LogLevel.Debug) && result.Document.Embedding != null && result.Document.Embedding.Length > 0)
+                {
+                    resultsWithEmbedding++;
+                }
+            }
+
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(
+                    "Hybrid search returned {ResultCount} docs; {WithEmbedding} had non-null embeddings (top={Top}).",
+                    employeeIds.Count,
+                    resultsWithEmbedding,
+                    top);
             }
 
             return employeeIds;
@@ -159,6 +200,11 @@ public class AzureAISearchRepository : ISearchRepository
                 return;
             }
 
+            if (employee.Embedding == null || employee.Embedding.Length == 0)
+            {
+                _logger.LogWarning("Indexing employee {Id} with NULL/empty embedding", employeeId);
+            }
+
             var searchDoc = new EmployeeSearchDocument
             {
                 Id = employee.Id,
@@ -202,6 +248,19 @@ public class AzureAISearchRepository : ISearchRepository
     {
         try
         {
+            try
+            {
+                await _indexClient.DeleteIndexAsync(_indexName);
+                _logger.LogInformation("Deleted search index {IndexName} before rebuild", _indexName);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Index didn't exist yet
+            }
+
+            var definition = BuildIndexDefinition();
+            await _indexClient.CreateOrUpdateIndexAsync(definition);
+
             var employees = await _cosmosDbService.GetAllEmployeesAsync();
             var searchDocs = employees.Select(e => new EmployeeSearchDocument
             {
@@ -217,6 +276,14 @@ public class AzureAISearchRepository : ISearchRepository
                 Bio = e.Bio,
                 Embedding = e.Embedding
             }).ToList();
+
+            var withEmbedding = searchDocs.Count(d => d.Embedding != null && d.Embedding.Length > 0);
+            var withoutEmbedding = searchDocs.Count - withEmbedding;
+            _logger.LogInformation(
+                "Preparing to rebuild search index with {Total} employees. Embeddings present: {WithEmbedding}. Missing: {WithoutEmbedding}.",
+                searchDocs.Count,
+                withEmbedding,
+                withoutEmbedding);
 
             if (searchDocs.Any())
             {

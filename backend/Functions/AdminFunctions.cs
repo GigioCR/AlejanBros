@@ -7,6 +7,8 @@ using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
+using System.Linq;
+using AlejanBros.Application.Interfaces;
 
 namespace AlejanBros.Functions;
 
@@ -14,15 +16,18 @@ public class AdminFunctions
 {
     private readonly ICosmosDbService _cosmosDbService;
     private readonly ISearchService _searchService;
+    private readonly IEmbeddingService _embeddingService;
     private readonly ILogger<AdminFunctions> _logger;
 
     public AdminFunctions(
         ICosmosDbService cosmosDbService,
         ISearchService searchService,
+        IEmbeddingService embeddingService,
         ILogger<AdminFunctions> logger)
     {
         _cosmosDbService = cosmosDbService;
         _searchService = searchService;
+        _embeddingService = embeddingService;
         _logger = logger;
     }
 
@@ -90,6 +95,8 @@ public class AdminFunctions
 
             foreach (var employee in employees)
             {
+                var embeddingText = $"{employee.Name} {employee.JobTitle} {employee.Department} {string.Join(" ", employee.Skills.Select(s => s.Name))} {employee.Bio}";
+                employee.Embedding = await _embeddingService.GenerateEmbeddingAsync(embeddingText);
                 await _cosmosDbService.CreateEmployeeAsync(employee);
             }
 
