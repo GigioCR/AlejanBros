@@ -30,7 +30,7 @@ public class EmployeeMatcherService : IEmployeeMatcherService
 
     public async Task<MatchResponse> FindMatchesAsync(MatchRequest request)
     {
-        _logger.LogInformation("Finding matches for query: {Query}", request.Query);
+        _logger.LogInformation("Finding matches for query: {Query}, TeamSize: {TeamSize}", request.Query, request.TeamSize);
 
         // Step 1: Generate embedding for the query
         var queryEmbedding = await _openAIService.GenerateEmbeddingAsync(request.Query);
@@ -76,12 +76,14 @@ public class EmployeeMatcherService : IEmployeeMatcherService
         }
 
         // Step 4: Use AI to analyze and rank candidates
+        _logger.LogInformation("Sending {CandidateCount} candidates to AI for analysis, requesting {TeamSize} matches", candidates.Count, request.TeamSize);
         var response = await _openAIService.AnalyzeAndRankCandidatesAsync(request, candidates);
+        _logger.LogInformation("AI returned {MatchCount} matches", response.Matches.Count);
 
         // Step 5: Limit to requested team size
         response.Matches = response.Matches.Take(request.TeamSize).ToList();
 
-        _logger.LogInformation("Found {Count} matches for query", response.Matches.Count);
+        _logger.LogInformation("Final result: {Count} matches for query", response.Matches.Count);
         return response;
     }
 

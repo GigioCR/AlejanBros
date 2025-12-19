@@ -112,7 +112,7 @@ export function ChatSubTab() {
                   {message.matches && message.matches.length > 0 && (
                     <div className="mb-4 space-y-2">
                       <p className="text-sm font-medium text-gray-300 mb-2">Top Matches:</p>
-                      {message.matches.slice(0, 5).map((match, index) => (
+                      {message.matches.map((match, index) => (
                         <MatchCard key={match.employee.id} match={match} rank={index + 1} />
                       ))}
                     </div>
