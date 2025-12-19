@@ -42,73 +42,73 @@ public class OpenAIService : IOpenAIService
         }
     }
 
-    public async Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null)
-    {
-        var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+    // public async Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null)
+    // {
+    //     var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
-        var systemPrompt = """
-            You are an expert HR assistant specializing in matching employees to projects.
+    //     var systemPrompt = """
+    //         You are an expert HR assistant specializing in matching employees to projects.
             
-            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+    //         LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
             
-            Analyze the project requirements and candidate profiles to provide recommendations.
-            Be concise but thorough in your analysis.
-            Focus on skill matches, experience levels, and availability.
-            You have access to the conversation history for context.
-            """;
+    //         Analyze the project requirements and candidate profiles to provide recommendations.
+    //         Be concise but thorough in your analysis.
+    //         Focus on skill matches, experience levels, and availability.
+    //         You have access to the conversation history for context.
+    //         """;
 
-        var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
-        {
-            c.Name,
-            c.JobTitle,
-            c.Department,
-            c.YearsOfExperience,
-            Skills = c.Skills.Select(s => new { s.Name, Level = s.Level.ToString(), s.YearsUsed }),
-            c.Certifications,
-            Availability = c.Availability.ToString(),
-            c.Bio
-        }), new JsonSerializerOptions { WriteIndented = true });
+    //     var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
+    //     {
+    //         c.Name,
+    //         c.JobTitle,
+    //         c.Department,
+    //         c.YearsOfExperience,
+    //         Skills = c.Skills.Select(s => new { s.Name, Level = s.Level.ToString(), s.YearsUsed }),
+    //         c.Certifications,
+    //         Availability = c.Availability.ToString(),
+    //         c.Bio
+    //     }), new JsonSerializerOptions { WriteIndented = true });
 
-        var userPrompt = $"""
-            Project Requirements:
-            Query: {request.Query}
-            Required Skills: {string.Join(", ", request.RequiredSkills ?? new List<string>())}
-            Tech Stack: {string.Join(", ", request.TechStack ?? new List<string>())}
-            Minimum Experience: {request.MinimumExperience ?? 0} years
-            Team Size Needed: {request.TeamSize}
+    //     var userPrompt = $"""
+    //         Project Requirements:
+    //         Query: {request.Query}
+    //         Required Skills: {string.Join(", ", request.RequiredSkills ?? new List<string>())}
+    //         Tech Stack: {string.Join(", ", request.TechStack ?? new List<string>())}
+    //         Minimum Experience: {request.MinimumExperience ?? 0} years
+    //         Team Size Needed: {request.TeamSize}
 
-            Available Candidates:
-            {candidatesJson}
+    //         Available Candidates:
+    //         {candidatesJson}
 
-            Please analyze these candidates and provide:
-            1. A ranked list of the best matches
-            2. Key reasons for each recommendation
-            3. Any skill gaps that should be addressed
-            4. Overall team composition recommendation
-            """;
+    //         Please analyze these candidates and provide:
+    //         1. A ranked list of the best matches
+    //         2. Key reasons for each recommendation
+    //         3. Any skill gaps that should be addressed
+    //         4. Overall team composition recommendation
+    //         """;
 
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt)
-        };
+    //     var messages = new List<ChatMessage>
+    //     {
+    //         new SystemChatMessage(systemPrompt)
+    //     };
 
-        // Add conversation history for context
-        if (history != null && history.Count > 0)
-        {
-            foreach (var msg in history)
-            {
-                if (msg.Role.Equals("user", StringComparison.OrdinalIgnoreCase))
-                    messages.Add(new UserChatMessage(msg.Content));
-                else if (msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
-                    messages.Add(new AssistantChatMessage(msg.Content));
-            }
-        }
+    //     // Add conversation history for context
+    //     if (history != null && history.Count > 0)
+    //     {
+    //         foreach (var msg in history)
+    //         {
+    //             if (msg.Role.Equals("user", StringComparison.OrdinalIgnoreCase))
+    //                 messages.Add(new UserChatMessage(msg.Content));
+    //             else if (msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
+    //                 messages.Add(new AssistantChatMessage(msg.Content));
+    //         }
+    //     }
 
-        messages.Add(new UserChatMessage(userPrompt));
+    //     messages.Add(new UserChatMessage(userPrompt));
 
-        var response = await chatClient.CompleteChatAsync(messages);
-        return response.Value.Content[0].Text;
-    }
+    //     var response = await chatClient.CompleteChatAsync(messages);
+    //     return response.Value.Content[0].Text;
+    // }
 
     public async Task<MatchResponse> AnalyzeAndRankCandidatesAsync(MatchRequest request, IEnumerable<Employee> candidates)
     {
@@ -129,6 +129,7 @@ public class OpenAIService : IOpenAIService
                         "employeeId": "string (MUST be the exact Id field from the candidate data)",
                         "matchScore": 0.0-1.0,
                         "matchReasons": ["reason1", "reason2"],
+                        "bonusReasons": ["bonus1", "bonus2"],
                         "gaps": ["gap1", "gap2"]
                     }
                 ],
@@ -178,9 +179,17 @@ public class OpenAIService : IOpenAIService
             - Do NOT infer or assume additional technologies. Only reference what the user explicitly asked for.
             - If the user only mentions "Android/Kotlin", do NOT add Firebase, Jetpack Compose, or any other technology as a gap unless the user explicitly mentioned them.
             - If a candidate has extra skills beyond what the project requires, that is NOT a gap - it's a bonus.
-            - Having additional skills the project doesn't need should be mentioned positively in matchReasons, not as gaps.
+            - Having additional skills the project doesn't need should be mentioned positively in bonusReasons, not as gaps.
             - A gap is strictly: a skill EXPLICITLY listed by the user that the candidate does NOT have.
             - If the candidate has all explicitly required skills, gaps should be an empty array.
+
+            CRITICAL RULES FOR MATCH REASONS VS BONUS REASONS:
+            - matchReasons must ONLY reference criteria explicitly requested by the user (skills mentioned in the user's query, Required Skills, Tech Stack, availability, and minimum experience).
+            - bonusReasons may include relevant strengths NOT explicitly requested (e.g., extra skills, certifications, domain experience). Do NOT put bonus skills in matchReasons.
+
+            FALLBACK / WEAK MATCH RULE:
+            - If a candidate matches ZERO of the explicitly requested skills, they are a fallback option.
+            - In that case: cap matchScore to <= 0.29, and include a matchReason like "Fallback: does not match required skills; selected due to availability/experience/limited pool".
             
             CRITICAL: Only evaluate candidates against what the user EXPLICITLY requested. Do not expand the requirements with related technologies.
             """;
@@ -283,6 +292,7 @@ public class OpenAIService : IOpenAIService
                 Employee = employee,
                 MatchScore = match.MatchScore,
                 MatchReasons = match.MatchReasons,
+                BonusReasons = match.BonusReasons,
                 Gaps = match.Gaps,
                 SkillMatches = CalculateSkillMatches(employee, request)
             });
@@ -547,6 +557,7 @@ public class OpenAIService : IOpenAIService
         public string EmployeeId { get; set; } = string.Empty;
         public double MatchScore { get; set; }
         public List<string> MatchReasons { get; set; } = new();
+        public List<string> BonusReasons { get; set; } = new();
         public List<string> Gaps { get; set; } = new();
     }
 }

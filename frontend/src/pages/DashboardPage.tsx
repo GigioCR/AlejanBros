@@ -21,7 +21,7 @@ export function DashboardPage() {
     <div className="min-h-screen bg-gray-900">
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
@@ -52,7 +52,7 @@ export function DashboardPage() {
 
       {/* Tabs */}
       <div className="bg-gray-800/50 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -77,7 +77,7 @@ export function DashboardPage() {
       </div>
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'employees' && <EmployeesTab />}
         {activeTab === 'projects' && <ProjectsTab />}
         {activeTab === 'matching' && <AiMatchesTab />}

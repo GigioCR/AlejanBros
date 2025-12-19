@@ -48,6 +48,16 @@ export function MatchCard({ match, rank }: MatchCardProps) {
               </ul>
             </div>
           )}
+          {match.bonusReasons && match.bonusReasons.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-400 mb-1">Bonus strengths:</p>
+              <ul className="text-xs text-gray-300 list-disc list-inside">
+                {match.bonusReasons.map((reason, i) => (
+                  <li key={i}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {match.gaps && match.gaps.length > 0 && (
             <div>
               <p className="text-xs font-medium text-gray-400 mb-1">Skill gaps:</p>

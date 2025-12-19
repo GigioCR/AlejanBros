@@ -58,6 +58,7 @@ export interface MatchResult {
   employee: Employee;
   matchScore: number;
   matchReasons: string[];
+  bonusReasons?: string[];
   gaps: string[];
   skillMatches: unknown[];
 }

@@ -24,6 +24,8 @@ export function ChatSubTab() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const maxTextareaHeightPx = 220;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,6 +34,16 @@ export function ChatSubTab() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const adjustTextareaHeight = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    el.style.height = 'auto';
+    const nextHeight = Math.min(el.scrollHeight, maxTextareaHeightPx);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxTextareaHeightPx ? 'auto' : 'hidden';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +59,11 @@ export function ChatSubTab() {
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput('');
+    // Reset textarea height after sending
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.overflowY = 'hidden';
+    }
     setIsLoading(true);
 
     try {
@@ -151,10 +168,14 @@ export function ChatSubTab() {
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-gray-700">
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-end">
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              adjustTextareaHeight();
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -162,14 +183,14 @@ export function ChatSubTab() {
               }
             }}
             placeholder="Ask about team requirements, skills, or project needs..."
-            className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none min-h-[48px] max-h-[120px]"
+            className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none min-h-[48px] max-h-[220px] overflow-y-hidden"
             disabled={isLoading}
             rows={1}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+            className="h-12 w-12 shrink-0 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors flex items-center justify-center"
           >
             <Send className="w-5 h-5" />
           </button>

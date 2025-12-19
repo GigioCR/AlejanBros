@@ -20,7 +20,7 @@ public class ConversationMessage
 public interface IOpenAIService
 {
     Task<float[]> GenerateEmbeddingAsync(string text);
-    Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null);
+    // Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null);
     Task<MatchResponse> AnalyzeAndRankCandidatesAsync(MatchRequest request, IEnumerable<Employee> candidates);
     Task<bool> IsMatchingRelatedQueryAsync(string message);
     Task<QueryType> ClassifyQueryTypeAsync(string message);

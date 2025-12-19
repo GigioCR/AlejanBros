@@ -37,6 +37,9 @@ public class MatchResult
     [JsonPropertyName("matchReasons")]
     public List<string> MatchReasons { get; set; } = new();
 
+    [JsonPropertyName("bonusReasons")]
+    public List<string> BonusReasons { get; set; } = new();
+
     [JsonPropertyName("skillMatches")]
     public List<SkillMatch> SkillMatches { get; set; } = new();
 
