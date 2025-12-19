@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, type Employee, type PaginatedResult } from '../lib/api';
-import { Plus, User, RefreshCw } from 'lucide-react';
+import { User, RefreshCw } from 'lucide-react';
 import { Pagination } from './Pagination';
 import { EmployeeCard } from './EmployeeCard';
 
@@ -48,16 +48,6 @@ export function EmployeesTab() {
     loadEmployees(1, newPageSize);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this employee?')) return;
-    try {
-      await api.deleteEmployee(id);
-      setEmployees(employees.filter(e => e.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete employee');
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -81,10 +71,6 @@ export function EmployeesTab() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors">
-            <Plus className="w-4 h-4" />
-            Add Employee
-          </button>
         </div>
       </div>
 
@@ -106,7 +92,6 @@ export function EmployeesTab() {
             <EmployeeCard
               key={employee.id}
               employee={employee}
-              onDelete={handleDelete}
             />
           ))}
         </div>

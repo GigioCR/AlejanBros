@@ -57,10 +57,12 @@ export interface PaginatedResult<T> {
 export interface MatchResult {
   employee: Employee;
   matchScore: number;
+  baseMatchScore?: number;
   matchReasons: string[];
   bonusReasons?: string[];
   gaps: string[];
   skillMatches: unknown[];
+  isFallbackCandidate?: boolean;
 }
 
 export interface MatchResponse {

@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { type Employee } from '../lib/api';
-import { Trash2, Edit, Briefcase, Star } from 'lucide-react';
+import { Briefcase, Star } from 'lucide-react';
 
 interface EmployeeCardProps {
   employee: Employee;
-  onDelete: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function EmployeeCard({ employee, onDelete }: EmployeeCardProps) {
+export function EmployeeCard({ employee }: EmployeeCardProps) {
   const [showAllSkills, setShowAllSkills] = useState(false);
 
   const getAvailabilityLabel = (availability: number | string): string => {
@@ -47,17 +47,6 @@ export function EmployeeCard({ employee, onDelete }: EmployeeCardProps) {
             <h3 className="font-semibold text-white">{employee.name}</h3>
             <p className="text-sm text-gray-400">{employee.title}</p>
           </div>
-        </div>
-        <div className="flex gap-1">
-          <button className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-lg transition-colors">
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onDelete(employee.id)}
-            className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
         </div>
       </div>
 

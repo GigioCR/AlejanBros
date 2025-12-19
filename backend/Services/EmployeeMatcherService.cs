@@ -32,16 +32,20 @@ public class EmployeeMatcherService : IEmployeeMatcherService
     {
         _logger.LogInformation("Finding matches for query: {Query}, TeamSize: {TeamSize}", request.Query, request.TeamSize);
 
-        // Step 1: Generate embedding for the query
+        // Step 1: Extract availability constraint from user query BEFORE filtering
+        var extractedConstraint = await _openAIService.ExtractAvailabilityConstraintAsync(request.Query);
+        _logger.LogInformation("Extracted availability constraint: {Constraint}", extractedConstraint);
+
+        // Step 2: Generate embedding for the query
         var queryEmbedding = await _openAIService.GenerateEmbeddingAsync(request.Query);
 
-        // Step 2: Perform hybrid search (text + vector)
+        // Step 3: Perform hybrid search (text + vector)
         var searchResults = await _searchService.HybridSearchAsync(
             request.Query,
             queryEmbedding,
             top: request.TeamSize * 3); // Get more candidates than needed for better ranking
 
-        // Step 3: Get full employee details from Cosmos DB
+        // Step 4: Get full employee details from Cosmos DB and apply filters
         var candidateIds = searchResults.Select(r => r.Id).ToList();
         var candidates = new List<Employee>();
 
@@ -50,14 +54,24 @@ public class EmployeeMatcherService : IEmployeeMatcherService
             var employee = await _cosmosDbService.GetEmployeeAsync(id);
             if (employee != null)
             {
-                // Filter by availability if required
-                if (!request.AvailabilityRequired || employee.Availability != AvailabilityStatus.Unavailable)
+                // Filter by minimum experience first
+                if (request.MinimumExperience.HasValue && employee.YearsOfExperience < request.MinimumExperience.Value)
                 {
-                    // Filter by minimum experience if specified
-                    if (!request.MinimumExperience.HasValue || employee.YearsOfExperience >= request.MinimumExperience.Value)
-                    {
-                        candidates.Add(employee);
-                    }
+                    continue;
+                }
+
+                // Apply extracted availability constraint
+                var passesAvailabilityFilter = extractedConstraint switch
+                {
+                    AvailabilityConstraint.Any => true,
+                    AvailabilityConstraint.ExcludeUnavailable => employee.Availability != AvailabilityStatus.Unavailable,
+                    AvailabilityConstraint.OnlyAvailable => employee.Availability == AvailabilityStatus.Available,
+                    _ => employee.Availability != AvailabilityStatus.Unavailable
+                };
+
+                if (passesAvailabilityFilter)
+                {
+                    candidates.Add(employee);
                 }
             }
         }
@@ -82,6 +96,21 @@ public class EmployeeMatcherService : IEmployeeMatcherService
 
         // Step 5: Limit to requested team size
         response.Matches = response.Matches.Take(request.TeamSize).ToList();
+
+        // Step 7: Check if fewer matches than requested due to availability constraint
+        var matchCount = response.Matches.Count;
+        var requestedCount = request.TeamSize;
+
+        if (matchCount < requestedCount && extractedConstraint == AvailabilityConstraint.OnlyAvailable)
+        {
+            var insufficientNote = $"\n\n⚠️ **Availability Note**: You requested {requestedCount} fully Available employees, but only **{matchCount}** match your criteria. " +
+                                   $"You can:\n" +
+                                   $"- Ask for a smaller team size (e.g., \"I need {matchCount} employees...\")\n" +
+                                   $"- Include partially available employees (e.g., \"prioritize availability but include partially available\")\n" +
+                                   $"- Adjust the required skills";
+            response.Analysis += insufficientNote;
+            response.HasSufficientMatches = false;
+        }
 
         _logger.LogInformation("Final result: {Count} matches for query", response.Matches.Count);
         return response;

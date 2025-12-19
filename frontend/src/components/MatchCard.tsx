@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { type MatchResult } from '../lib/api';
 
 interface MatchCardProps {
@@ -7,8 +7,18 @@ interface MatchCardProps {
   rank: number;
 }
 
+function getFitLabel(score: number): { label: string; colorClass: string } {
+  const percent = score * 100;
+  if (percent >= 90) return { label: 'Excellent Fit', colorClass: 'bg-emerald-500/20 text-emerald-400' };
+  if (percent >= 75) return { label: 'Great Fit', colorClass: 'bg-green-500/20 text-green-400' };
+  if (percent >= 60) return { label: 'Good Fit', colorClass: 'bg-yellow-500/20 text-yellow-400' };
+  if (percent >= 40) return { label: 'Moderate Fit', colorClass: 'bg-orange-500/20 text-orange-400' };
+  return { label: 'Weak Fit', colorClass: 'bg-red-500/20 text-red-400' };
+}
+
 export function MatchCard({ match, rank }: MatchCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const fit = getFitLabel(match.matchScore);
 
   return (
     <div className="bg-gray-800 rounded-lg border border-gray-600 p-3">
@@ -23,9 +33,8 @@ export function MatchCard({ match, rank }: MatchCardProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-400 rounded-full text-xs">
-            <Star className="w-3 h-3" />
-            <span className="font-semibold">{Math.round(match.matchScore * 100)}%</span>
+          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${fit.colorClass}`}>
+            <span className="font-semibold">{fit.label}</span>
           </div>
           <button
             onClick={() => setExpanded(!expanded)}

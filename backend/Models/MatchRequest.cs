@@ -24,6 +24,9 @@ public class MatchRequest
 
     [JsonPropertyName("availabilityRequired")]
     public bool AvailabilityRequired { get; set; } = true;
+
+    [JsonPropertyName("availabilityConstraint")]
+    public AvailabilityConstraint AvailabilityConstraint { get; set; } = AvailabilityConstraint.ExcludeUnavailable;
 }
 
 public class MatchResult
@@ -33,6 +36,9 @@ public class MatchResult
 
     [JsonPropertyName("matchScore")]
     public double MatchScore { get; set; }
+
+    [JsonPropertyName("baseMatchScore")]
+    public double BaseMatchScore { get; set; }
 
     [JsonPropertyName("matchReasons")]
     public List<string> MatchReasons { get; set; } = new();
@@ -45,6 +51,9 @@ public class MatchResult
 
     [JsonPropertyName("gaps")]
     public List<string> Gaps { get; set; } = new();
+
+    [JsonPropertyName("isFallbackCandidate")]
+    public bool IsFallbackCandidate { get; set; } = false;
 }
 
 public class SkillMatch
@@ -87,4 +96,14 @@ public class MatchResponse
 
     [JsonPropertyName("recommendation")]
     public string? Recommendation { get; set; }
+
+    [JsonPropertyName("appliedAvailabilityConstraint")]
+    public AvailabilityConstraint AppliedAvailabilityConstraint { get; set; } = AvailabilityConstraint.ExcludeUnavailable;
+}
+
+public enum AvailabilityConstraint
+{
+    Any,
+    ExcludeUnavailable,
+    OnlyAvailable
 }

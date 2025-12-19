@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AlejanBros.Configuration;
 using AlejanBros.Models;
 using Azure.AI.OpenAI;
@@ -42,74 +43,6 @@ public class OpenAIService : IOpenAIService
         }
     }
 
-    // public async Task<string> GenerateMatchAnalysisAsync(MatchRequest request, IEnumerable<Employee> candidates, List<ConversationMessage>? history = null)
-    // {
-    //     var chatClient = _client.GetChatClient(_settings.ChatDeployment);
-
-    //     var systemPrompt = """
-    //         You are an expert HR assistant specializing in matching employees to projects.
-            
-    //         LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
-            
-    //         Analyze the project requirements and candidate profiles to provide recommendations.
-    //         Be concise but thorough in your analysis.
-    //         Focus on skill matches, experience levels, and availability.
-    //         You have access to the conversation history for context.
-    //         """;
-
-    //     var candidatesJson = JsonSerializer.Serialize(candidates.Select(c => new
-    //     {
-    //         c.Name,
-    //         c.JobTitle,
-    //         c.Department,
-    //         c.YearsOfExperience,
-    //         Skills = c.Skills.Select(s => new { s.Name, Level = s.Level.ToString(), s.YearsUsed }),
-    //         c.Certifications,
-    //         Availability = c.Availability.ToString(),
-    //         c.Bio
-    //     }), new JsonSerializerOptions { WriteIndented = true });
-
-    //     var userPrompt = $"""
-    //         Project Requirements:
-    //         Query: {request.Query}
-    //         Required Skills: {string.Join(", ", request.RequiredSkills ?? new List<string>())}
-    //         Tech Stack: {string.Join(", ", request.TechStack ?? new List<string>())}
-    //         Minimum Experience: {request.MinimumExperience ?? 0} years
-    //         Team Size Needed: {request.TeamSize}
-
-    //         Available Candidates:
-    //         {candidatesJson}
-
-    //         Please analyze these candidates and provide:
-    //         1. A ranked list of the best matches
-    //         2. Key reasons for each recommendation
-    //         3. Any skill gaps that should be addressed
-    //         4. Overall team composition recommendation
-    //         """;
-
-    //     var messages = new List<ChatMessage>
-    //     {
-    //         new SystemChatMessage(systemPrompt)
-    //     };
-
-    //     // Add conversation history for context
-    //     if (history != null && history.Count > 0)
-    //     {
-    //         foreach (var msg in history)
-    //         {
-    //             if (msg.Role.Equals("user", StringComparison.OrdinalIgnoreCase))
-    //                 messages.Add(new UserChatMessage(msg.Content));
-    //             else if (msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
-    //                 messages.Add(new AssistantChatMessage(msg.Content));
-    //         }
-    //     }
-
-    //     messages.Add(new UserChatMessage(userPrompt));
-
-    //     var response = await chatClient.CompleteChatAsync(messages);
-    //     return response.Value.Content[0].Text;
-    // }
-
     public async Task<MatchResponse> AnalyzeAndRankCandidatesAsync(MatchRequest request, IEnumerable<Employee> candidates)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -117,17 +50,39 @@ public class OpenAIService : IOpenAIService
 
         var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
-        var systemPrompt = $$"""
-            You are an expert HR assistant. Analyze candidates and return a JSON response.
-            
+        var extracted = await ExtractRequirementsAndPreferencesAsync(chatClient, request);
+        var effectiveRequest = new MatchRequest
+        {
+            Query = request.Query,
+            ProjectId = request.ProjectId,
+            RequiredSkills = extracted.RequiredSkills,
+            TechStack = extracted.TechStack,
+            MinimumExperience = extracted.MinimumExperience ?? request.MinimumExperience,
+            TeamSize = request.TeamSize,
+            AvailabilityRequired = request.AvailabilityRequired,
+            AvailabilityConstraint = extracted.AvailabilityConstraint
+        };
+
+        var weightedMatches = candidatesList.Select(c => BuildScoredMatch(c, effectiveRequest, extracted.Preference)).ToList();
+        var topMatches = weightedMatches
+            .OrderByDescending(m => m.MatchScore)
+            .Take(request.TeamSize)
+            .ToList();
+
+        var systemPrompt = """
+            You are an expert HR assistant. You will be given project requirements and a pre-ranked list of candidates.
+
             LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
-            
+
+            Your job is to explain WHY each candidate was recommended.
+            DO NOT calculate or change any numeric scores. Scores are already computed.
+            DO NOT reorder the candidates.
+
             You must respond ONLY with valid JSON in the following format:
             {
                 "matches": [
                     {
                         "employeeId": "string (MUST be the exact Id field from the candidate data)",
-                        "matchScore": 0.0-1.0,
                         "matchReasons": ["reason1", "reason2"],
                         "bonusReasons": ["bonus1", "bonus2"],
                         "gaps": ["gap1", "gap2"]
@@ -136,83 +91,51 @@ public class OpenAIService : IOpenAIService
                 "summary": "Brief overall summary",
                 "analysis": "Detailed markdown analysis explaining your ranking decisions, why each candidate was selected, team composition recommendations, and any concerns. Use headers and bullet points for readability. Use employee NAMES only in this field, never IDs."
             }
-            
+
+            CRITICAL: You MUST return a match entry for EVERY candidate provided in the list, in the same order. Do not skip any candidates.
+
             CRITICAL: The "employeeId" field MUST contain the EXACT "Id" value from the candidate JSON data (e.g., a GUID like "abc123-def-456"). Do NOT use the employee's name in employeeId.
             NOTE: In the "analysis" and "summary" text fields, use employee NAMES (e.g., "Isabella Moreno"), NOT IDs. IDs are only for the employeeId field.
-            
-            Order matches by matchScore descending. 
-            IMPORTANT: Return EXACTLY {{request.TeamSize}} matches (or all candidates if fewer are available). Do not limit to 5.
-            
-            MATCH SCORE CALCULATION (use this exact formula):
-            The matchScore is calculated as a weighted sum of the following factors:
-            
-            1. SKILL MATCH (50% weight):
-               - Calculate: (number of required skills the candidate has) / (total required skills mentioned by user)
-               - Example: If user mentions 3 skills and candidate has 2 of them: 2/3 = 0.67
-               - Multiply result by 0.50
-            
-            2. SKILL LEVEL (25% weight):
-               - For each matched skill, score the level: Expert=1.0, Advanced=0.8, Intermediate=0.5, Beginner=0.2
-               - Average the levels of matched skills
-               - Multiply result by 0.25
-            
-            3. AVAILABILITY (15% weight):
-               - Available = 1.0, PartiallyAvailable = 0.5, Unavailable = 0.0
-               - Multiply result by 0.15
-            
-            4. EXPERIENCE (10% weight):
-               - 10+ years = 1.0, 5-9 years = 0.8, 3-4 years = 0.6, 1-2 years = 0.4, <1 year = 0.2
-               - Multiply result by 0.10
-            
-            FINAL SCORE = (SkillMatch * 0.50) + (SkillLevel * 0.25) + (Availability * 0.15) + (Experience * 0.10)
-            
-            SCORE INTERPRETATION:
-            - 0.7-1.0: Strong match
-            - 0.5-0.69: Moderate match
-            - 0.3-0.49: Weak match
-            - 0.0-0.29: Poor match
-            
-            Be consistent: same candidate with same requirements should always get the same score.
-            
+
             CRITICAL RULES FOR GAPS:
-            - "gaps" should ONLY contain skills that are EXPLICITLY MENTIONED in the user's query, Required Skills, or Tech Stack fields above.
+            - "gaps" must ONLY contain skill/technology NAMES that appear in Required Skills or Tech Stack.
+            - NEVER include "Availability", "Experience", or any non-skill criteria in gaps.
             - Do NOT infer or assume additional technologies. Only reference what the user explicitly asked for.
-            - If the user only mentions "Android/Kotlin", do NOT add Firebase, Jetpack Compose, or any other technology as a gap unless the user explicitly mentioned them.
             - If a candidate has extra skills beyond what the project requires, that is NOT a gap - it's a bonus.
-            - Having additional skills the project doesn't need should be mentioned positively in bonusReasons, not as gaps.
             - A gap is strictly: a skill EXPLICITLY listed by the user that the candidate does NOT have.
             - If the candidate has all explicitly required skills, gaps should be an empty array.
 
             CRITICAL RULES FOR MATCH REASONS VS BONUS REASONS:
             - matchReasons must ONLY reference criteria explicitly requested by the user (skills mentioned in the user's query, Required Skills, Tech Stack, availability, and minimum experience).
-            - bonusReasons may include relevant strengths NOT explicitly requested (e.g., extra skills, certifications, domain experience). Do NOT put bonus skills in matchReasons.
+            - bonusReasons may include relevant strengths NOT explicitly requested. Do NOT put bonus skills in matchReasons.
 
             FALLBACK / WEAK MATCH RULE:
             - If a candidate matches ZERO of the explicitly requested skills, they are a fallback option.
-            - In that case: cap matchScore to <= 0.29, and include a matchReason like "Fallback: does not match required skills; selected due to availability/experience/limited pool".
-            
-            CRITICAL: Only evaluate candidates against what the user EXPLICITLY requested. Do not expand the requirements with related technologies.
+            - In that case include a matchReason like "Fallback: does not match required skills; selected due to availability/experience/limited pool".
             """;
 
-        var candidatesJson = JsonSerializer.Serialize(candidatesList.Select(c => new
+        var candidatesJson = JsonSerializer.Serialize(topMatches.Select(m => new
         {
-            c.Id,
-            c.Name,
-            c.JobTitle,
-            c.YearsOfExperience,
-            Skills = c.Skills.Select(s => new { s.Name, Level = s.Level.ToString() }),
-            Availability = c.Availability.ToString()
+            Id = m.Employee.Id,
+            m.Employee.Name,
+            m.Employee.JobTitle,
+            m.Employee.YearsOfExperience,
+            Skills = m.Employee.Skills.Select(s => new { s.Name, Level = s.Level.ToString() }),
+            Availability = m.Employee.Availability.ToString(),
+            BaseMatchScore = m.BaseMatchScore,
+            AdjustedMatchScore = m.MatchScore
         }));
 
         var userPrompt = $"""
             Project: {request.Query}
-            Required Skills: {string.Join(", ", request.RequiredSkills ?? new List<string>())}
-            Tech Stack: {string.Join(", ", request.TechStack ?? new List<string>())}
-            Min Experience: {request.MinimumExperience ?? 0} years
+            Required Skills: {string.Join(", ", effectiveRequest.RequiredSkills ?? new List<string>())}
+            Tech Stack: {string.Join(", ", effectiveRequest.TechStack ?? new List<string>())}
+            Min Experience: {effectiveRequest.MinimumExperience ?? 0} years
             Team Size: {request.TeamSize}
             Availability Required: {request.AvailabilityRequired}
+            Preference: {extracted.Preference}
 
-            Candidates: {candidatesJson}
+            Candidates (pre-ranked with computed scores): {candidatesJson}
             """;
 
         var messages = new List<ChatMessage>
@@ -224,7 +147,7 @@ public class OpenAIService : IOpenAIService
         var options = new ChatCompletionOptions
         {
             ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat(),
-            Temperature = 0f // More deterministic responses for consistent scoring
+            Temperature = 0f
         };
 
         var response = await chatClient.CompleteChatAsync(messages, options);
@@ -249,6 +172,7 @@ public class OpenAIService : IOpenAIService
             {
                 Employee = c,
                 MatchScore = 1.0 - (index * 0.05), // Decreasing score by position
+                BaseMatchScore = 1.0 - (index * 0.05),
                 MatchReasons = new List<string> { "Matched based on search criteria" },
                 Gaps = new List<string>(),
                 SkillMatches = CalculateSkillMatches(c, request)
@@ -266,39 +190,77 @@ public class OpenAIService : IOpenAIService
 
         stopwatch.Stop();
 
-        var matchResults = new List<MatchResult>();
-        foreach (var match in analysisResult?.Matches ?? new List<AnalysisMatch>())
+        var aiMatchesById = (analysisResult?.Matches ?? new List<AnalysisMatch>())
+            .GroupBy(m => m.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var match in topMatches)
         {
-            // Try to find by ID first, then fallback to name matching (in case AI returns name instead of ID)
-            var employee = candidatesList.FirstOrDefault(c => c.Id == match.EmployeeId);
-            
-            if (employee == null)
+            if (aiMatchesById.TryGetValue(match.Employee.Id, out var aiMatch))
             {
-                // Fallback: try matching by name (case-insensitive)
-                employee = candidatesList.FirstOrDefault(c => 
-                    c.Name.Equals(match.EmployeeId, StringComparison.OrdinalIgnoreCase));
+                match.MatchReasons = aiMatch.MatchReasons;
+                match.BonusReasons = aiMatch.BonusReasons;
+                var allowedGapSkills = (effectiveRequest.RequiredSkills ?? new List<string>())
+                    .Concat(effectiveRequest.TechStack ?? new List<string>())
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                // Filter gaps: must be in required skills AND employee must NOT have that skill
+                match.Gaps = (aiMatch.Gaps ?? new List<string>())
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .Where(g => allowedGapSkills.Any(s => s.Equals(g, StringComparison.OrdinalIgnoreCase)))
+                    .Where(g => !match.Employee.Skills.Any(es => es.Name.Equals(g, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            else
+            {
+                // Fallback: AI didn't provide details for this candidate, generate detailed ones
+                var requiredSkills = (effectiveRequest.RequiredSkills ?? new List<string>())
+                    .Concat(effectiveRequest.TechStack ?? new List<string>())
+                    .ToList();
+                var matchedSkills = requiredSkills
+                    .Where(rs => match.Employee.Skills.Any(es => es.Name.Equals(rs, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                var gaps = requiredSkills.Except(matchedSkills, StringComparer.OrdinalIgnoreCase).ToList();
+
+                var reasons = new List<string>();
                 
-                if (employee == null)
+                // Add skill matches with levels
+                foreach (var skillName in matchedSkills)
                 {
-                    _logger.LogWarning("Employee not found for ID/Name: {EmployeeId}. Available IDs: {AvailableIds}", 
-                        match.EmployeeId, 
-                        string.Join(", ", candidatesList.Select(c => $"{c.Id} ({c.Name})")));
-                    continue;
+                    var employeeSkill = match.Employee.Skills.First(s => s.Name.Equals(skillName, StringComparison.OrdinalIgnoreCase));
+                    reasons.Add($"{employeeSkill.Level} level in {skillName}");
+                }
+                
+                // Add availability
+                reasons.Add($"Availability: {match.Employee.Availability}");
+                
+                // Add experience if relevant
+                if (match.Employee.YearsOfExperience >= 5)
+                {
+                    reasons.Add($"{match.Employee.YearsOfExperience} years of experience");
+                }
+
+                match.MatchReasons = reasons.Count > 0 ? reasons : new List<string> { $"Availability: {match.Employee.Availability}" };
+                match.Gaps = gaps;
+                
+                // Add bonus reasons for extra skills
+                var bonusSkills = match.Employee.Skills
+                    .Where(s => !requiredSkills.Any(rs => rs.Equals(s.Name, StringComparison.OrdinalIgnoreCase)))
+                    .Where(s => s.Level >= SkillLevel.Advanced)
+                    .Take(3)
+                    .ToList();
+                    
+                if (bonusSkills.Any())
+                {
+                    match.BonusReasons = bonusSkills.Select(s => $"{s.Level} level in {s.Name}").ToList();
                 }
             }
-            
-            matchResults.Add(new MatchResult
-            {
-                Employee = employee,
-                MatchScore = match.MatchScore,
-                MatchReasons = match.MatchReasons,
-                BonusReasons = match.BonusReasons,
-                Gaps = match.Gaps,
-                SkillMatches = CalculateSkillMatches(employee, request)
-            });
         }
 
-        var orderedMatches = matchResults.OrderByDescending(m => m.MatchScore).ToList();
+        var orderedMatches = topMatches;
         
         // Threshold check: if best match score is below 0.5, recommend training/external hiring
         const double MinimumAcceptableScore = 0.5;
@@ -325,7 +287,169 @@ public class OpenAIService : IOpenAIService
             TotalCandidates = candidatesList.Count,
             ProcessingTimeMs = stopwatch.ElapsedMilliseconds,
             HasSufficientMatches = hasSufficientMatches,
-            Recommendation = recommendation
+            Recommendation = recommendation,
+            AppliedAvailabilityConstraint = extracted.AvailabilityConstraint
+        };
+    }
+
+    private async Task<ExtractedRequirements> ExtractRequirementsAndPreferencesAsync(ChatClient chatClient, MatchRequest request)
+    {
+        var existingRequiredSkills = request.RequiredSkills ?? new List<string>();
+        var existingTechStack = request.TechStack ?? new List<string>();
+
+        var systemPrompt = """
+            Extract structured matching requirements and user priorities from the user's message.
+
+            LANGUAGE RULE: Always respond in ENGLISH regardless of the user's language.
+
+            Respond ONLY with valid JSON in this format:
+            {
+              "requiredSkills": ["skill1", "skill2"],
+              "techStack": ["tech1", "tech2"],
+              "minimumExperience": 0,
+              "preference": "balanced" | "availability" | "skills" | "experience",
+              "availabilityConstraint": "any" | "excludeUnavailable" | "onlyAvailable"
+            }
+
+            Rules:
+            - Only include skills/technologies explicitly mentioned by the user.
+            - Do NOT infer related technologies.
+            - If the user does not specify a minimum experience, set minimumExperience to 0.
+            
+            Availability rules:
+            - If user says "ONLY available", "must be available", "strictly available", "exclude partially available": set availabilityConstraint to "onlyAvailable" and preference to "availability"
+            - If user says "prioritize availability", "availability is critical/important", "prefer available": set availabilityConstraint to "excludeUnavailable" and preference to "availability"
+            - If no availability mentioned: set availabilityConstraint to "excludeUnavailable" and preference to "balanced"
+            """;
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage(systemPrompt),
+            new UserChatMessage(request.Query)
+        };
+
+        var options = new ChatCompletionOptions
+        {
+            ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat(),
+            Temperature = 0f
+        };
+
+        var response = await chatClient.CompleteChatAsync(messages, options);
+        var json = response.Value.Content[0].Text;
+
+        ExtractedRequirements? extracted;
+        try
+        {
+            extracted = JsonSerializer.Deserialize<ExtractedRequirements>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+            });
+        }
+        catch
+        {
+            extracted = null;
+        }
+
+        var requiredSkills = existingRequiredSkills.Count > 0
+            ? existingRequiredSkills
+            : (extracted?.RequiredSkills ?? new List<string>());
+
+        var techStack = existingTechStack.Count > 0
+            ? existingTechStack
+            : (extracted?.TechStack ?? new List<string>());
+
+        return new ExtractedRequirements
+        {
+            RequiredSkills = requiredSkills.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList(),
+            TechStack = techStack.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList(),
+            MinimumExperience = extracted?.MinimumExperience,
+            Preference = extracted?.Preference ?? PreferenceType.Balanced,
+            AvailabilityConstraint = extracted?.AvailabilityConstraint ?? AvailabilityConstraint.ExcludeUnavailable
+        };
+    }
+
+    private MatchResult BuildScoredMatch(Employee employee, MatchRequest request, PreferenceType preference)
+    {
+        var requiredSkills = (request.RequiredSkills ?? new List<string>())
+            .Concat(request.TechStack ?? new List<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var matchedSkills = requiredSkills
+            .Where(rs => employee.Skills.Any(es => es.Name.Equals(rs, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        var skillMatchRatio = requiredSkills.Count == 0 ? 0.0 : (double)matchedSkills.Count / requiredSkills.Count;
+        var skillLevelScore = matchedSkills.Count == 0
+            ? 0.0
+            : matchedSkills
+                .Select(rs => employee.Skills.First(es => es.Name.Equals(rs, StringComparison.OrdinalIgnoreCase)).Level)
+                .Average(l => GetSkillLevelScore(l));
+
+        var availabilityScore = GetAvailabilityScore(employee.Availability);
+        var experienceScore = GetExperienceScore(employee.YearsOfExperience);
+
+        var baseScore = (skillMatchRatio * 0.50) + (skillLevelScore * 0.25) + (availabilityScore * 0.15) + (experienceScore * 0.10);
+
+        var (wSkillMatch, wSkillLevel, wAvailability, wExperience) = preference switch
+        {
+            PreferenceType.Availability => (0.35, 0.20, 0.35, 0.10),
+            PreferenceType.Skills => (0.60, 0.25, 0.10, 0.05),
+            PreferenceType.Experience => (0.45, 0.20, 0.10, 0.25),
+            _ => (0.50, 0.25, 0.15, 0.10)
+        };
+
+        var adjustedScore = (skillMatchRatio * wSkillMatch) + (skillLevelScore * wSkillLevel) + (availabilityScore * wAvailability) + (experienceScore * wExperience);
+
+        if (requiredSkills.Count > 0 && matchedSkills.Count == 0)
+        {
+            baseScore = Math.Min(baseScore, 0.29);
+            adjustedScore = Math.Min(adjustedScore, 0.29);
+        }
+
+        return new MatchResult
+        {
+            Employee = employee,
+            MatchScore = adjustedScore,
+            BaseMatchScore = baseScore,
+            SkillMatches = CalculateSkillMatches(employee, request)
+        };
+    }
+
+    private static double GetSkillLevelScore(SkillLevel level)
+    {
+        return level switch
+        {
+            SkillLevel.Expert => 1.0,
+            SkillLevel.Advanced => 0.8,
+            SkillLevel.Intermediate => 0.5,
+            SkillLevel.Beginner => 0.2,
+            _ => 0.0
+        };
+    }
+
+    private static double GetAvailabilityScore(AvailabilityStatus availability)
+    {
+        return availability switch
+        {
+            AvailabilityStatus.Available => 1.0,
+            AvailabilityStatus.PartiallyAvailable => 0.5,
+            AvailabilityStatus.Unavailable => 0.0,
+            _ => 0.0
+        };
+    }
+
+    private static double GetExperienceScore(int years)
+    {
+        return years switch
+        {
+            >= 10 => 1.0,
+            >= 5 => 0.8,
+            >= 3 => 0.6,
+            >= 1 => 0.4,
+            _ => 0.2
         };
     }
 
@@ -545,6 +669,38 @@ public class OpenAIService : IOpenAIService
         return response.Value.Content[0].Text;
     }
 
+    public async Task<AvailabilityConstraint> ExtractAvailabilityConstraintAsync(string query)
+    {
+        try
+        {
+            var chatClient = _client.GetChatClient(_settings.ChatDeployment);
+
+            var systemPrompt = "Analyze the user's query and determine the availability constraint. Respond with ONLY one word: onlyAvailable, excludeUnavailable, or any. Rules: Use 'onlyAvailable' ONLY if user uses STRICT language like 'ONLY available', 'must be available', 'no partially available', 'exclude partially available'. Use 'excludeUnavailable' for SOFT preferences like 'preferably available', 'prefer available', 'prioritize availability', 'ideally available', or no mention of availability. Use 'any' if user explicitly wants unavailable included. IMPORTANT: 'preferably' or 'prefer' means SOFT preference = excludeUnavailable, NOT onlyAvailable.";
+
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(query)
+            };
+
+            var options = new ChatCompletionOptions { Temperature = 0f };
+            var response = await chatClient.CompleteChatAsync(messages, options);
+            var result = response.Value.Content[0].Text.Trim().ToLowerInvariant();
+
+            return result switch
+            {
+                "onlyavailable" => AvailabilityConstraint.OnlyAvailable,
+                "any" => AvailabilityConstraint.Any,
+                _ => AvailabilityConstraint.ExcludeUnavailable
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract availability constraint, defaulting to ExcludeUnavailable");
+            return AvailabilityConstraint.ExcludeUnavailable;
+        }
+    }
+
     private class AnalysisResponse
     {
         public List<AnalysisMatch> Matches { get; set; } = new();
@@ -555,9 +711,25 @@ public class OpenAIService : IOpenAIService
     private class AnalysisMatch
     {
         public string EmployeeId { get; set; } = string.Empty;
-        public double MatchScore { get; set; }
         public List<string> MatchReasons { get; set; } = new();
         public List<string> BonusReasons { get; set; } = new();
         public List<string> Gaps { get; set; } = new();
+    }
+
+    private class ExtractedRequirements
+    {
+        public List<string> RequiredSkills { get; set; } = new();
+        public List<string> TechStack { get; set; } = new();
+        public int? MinimumExperience { get; set; }
+        public PreferenceType Preference { get; set; } = PreferenceType.Balanced;
+        public AvailabilityConstraint AvailabilityConstraint { get; set; } = AvailabilityConstraint.ExcludeUnavailable;
+    }
+
+    private enum PreferenceType
+    {
+        Balanced,
+        Availability,
+        Skills,
+        Experience
     }
 }
