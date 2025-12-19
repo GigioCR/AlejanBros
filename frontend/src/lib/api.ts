@@ -113,28 +113,53 @@ class ApiClient {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
 
-    // Only redirect on 401 if NOT on auth endpoints (login/register expect 401 for invalid credentials)
-    if (response.status === 401 && !endpoint.startsWith('/auth/')) {
-      this.setToken(null);
-      window.location.href = '/login';
-      throw new Error('Unauthorized');
+      // Only redirect on 401 if NOT on auth endpoints (login/register expect 401 for invalid credentials)
+      if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+        this.setToken(null);
+        window.location.href = '/login';
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: 'Request Failed',
+          message: `Request failed with status ${response.status}`
+        }));
+
+        // Handle specific error codes with user-friendly messages
+        switch (response.status) {
+          case 400:
+            throw new Error(errorData.message || 'Invalid request. Please check your input.');
+          case 404:
+            throw new Error(errorData.message || 'The requested resource was not found.');
+          case 503:
+            throw new Error(errorData.message || 'Service is temporarily unavailable. Please try again.');
+          case 500:
+            throw new Error(errorData.message || 'An unexpected error occurred. Please try again later.');
+          default:
+            throw new Error(errorData.message || `Request failed with status ${response.status}`);
+        }
+      }
+
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      return response.json();
+    } catch (error) {
+      // Handle network errors
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('Network error. Please check your internet connection and try again.');
+      }
+      // Re-throw other errors
+      throw error;
     }
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }));
-      throw new Error(error.message || 'Request failed');
-    }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return response.json();
   }
 
   // Auth

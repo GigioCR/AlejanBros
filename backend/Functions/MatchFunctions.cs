@@ -58,12 +58,17 @@ public class MatchFunctions
         catch (JsonException ex)
         {
             _logger.LogError(ex, "Invalid JSON in request body");
-            return new BadRequestObjectResult(new { message = "Invalid JSON format" });
+            return new BadRequestObjectResult(new { error = "Invalid JSON format", message = "The request body contains invalid JSON. Please check your request format." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Service operation failed");
+            return new ObjectResult(new { error = "Service Error", message = ex.Message }) { StatusCode = 503 };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing match request");
-            return new StatusCodeResult(500);
+            _logger.LogError(ex, "Unexpected error processing match request");
+            return new ObjectResult(new { error = "Internal Server Error", message = "An unexpected error occurred. Please try again later." }) { StatusCode = 500 };
         }
     }
 
@@ -89,12 +94,17 @@ public class MatchFunctions
         catch (ArgumentException ex)
         {
             _logger.LogWarning(ex, "Project not found: {ProjectId}", projectId);
-            return new NotFoundObjectResult(new { message = ex.Message });
+            return new NotFoundObjectResult(new { error = "Project Not Found", message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Service operation failed for project {ProjectId}", projectId);
+            return new ObjectResult(new { error = "Service Error", message = ex.Message }) { StatusCode = 503 };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error finding matches for project {ProjectId}", projectId);
-            return new StatusCodeResult(500);
+            _logger.LogError(ex, "Unexpected error finding matches for project {ProjectId}", projectId);
+            return new ObjectResult(new { error = "Internal Server Error", message = "An unexpected error occurred. Please try again later." }) { StatusCode = 500 };
         }
     }
 
@@ -107,10 +117,11 @@ public class MatchFunctions
     {
         _logger.LogInformation("Processing chat request");
 
+        ChatRequest? chatRequest = null;
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var chatRequest = JsonSerializer.Deserialize<ChatRequest>(requestBody, new JsonSerializerOptions
+            chatRequest = JsonSerializer.Deserialize<ChatRequest>(requestBody, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
@@ -210,10 +221,36 @@ public class MatchFunctions
                     });
             }
         }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Invalid JSON in chat request body");
+            return new BadRequestObjectResult(new { error = "Invalid JSON format", message = "The request body contains invalid JSON. Please check your request format." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Service operation failed during chat");
+            return new ObjectResult(new ChatResponse
+            {
+                Message = chatRequest?.Message ?? string.Empty,
+                Response = $"I'm having trouble processing your request right now. {ex.Message}",
+                Matches = new List<MatchResult>(),
+                Summary = string.Empty,
+                TotalCandidates = 0,
+                Timestamp = DateTime.UtcNow
+            }) { StatusCode = 200 }; // Return 200 with error message in response for better UX
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing chat request");
-            return new StatusCodeResult(500);
+            _logger.LogError(ex, "Unexpected error processing chat request");
+            return new ObjectResult(new ChatResponse
+            {
+                Message = chatRequest?.Message ?? string.Empty,
+                Response = "I apologize, but I'm experiencing technical difficulties. Please try again in a moment.",
+                Matches = new List<MatchResult>(),
+                Summary = string.Empty,
+                TotalCandidates = 0,
+                Timestamp = DateTime.UtcNow
+            }) { StatusCode = 200 }; // Return 200 with error message in response for better UX
         }
     }
 }

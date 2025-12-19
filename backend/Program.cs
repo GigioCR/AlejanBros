@@ -1,5 +1,11 @@
 using AlejanBros.Configuration;
 using AlejanBros.Services;
+using AlejanBros.Domain.Repositories;
+using AlejanBros.Infrastructure.Persistence.CosmosDb;
+using AlejanBros.Infrastructure.Search;
+using AlejanBros.Infrastructure.AI.OpenAI;
+using AlejanBros.Application.Interfaces;
+using AlejanBros.Application.Services;
 using Azure;
 using Azure.AI.OpenAI;
 using Azure.Search.Documents.Indexes;
@@ -86,11 +92,21 @@ builder.Services.AddSingleton(sp =>
     return new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
 });
 
-// Register Services
+// Register Legacy Services (for backward compatibility)
 builder.Services.AddSingleton<ICosmosDbService, CosmosDbService>();
 builder.Services.AddSingleton<IOpenAIService, OpenAIService>();
 builder.Services.AddSingleton<ISearchService, SearchService>();
 builder.Services.AddSingleton<IEmployeeMatcherService, EmployeeMatcherService>();
 builder.Services.AddSingleton<IAuthService, AuthService>();
+
+// Register Clean Architecture - Domain Repositories
+builder.Services.AddSingleton<IEmployeeRepository, EmployeeRepository>();
+builder.Services.AddSingleton<IProjectRepository, ProjectRepository>();
+builder.Services.AddSingleton<IUserRepository, UserRepository>();
+builder.Services.AddSingleton<ISearchRepository, AzureAISearchRepository>();
+
+// Register Clean Architecture - Application Services
+builder.Services.AddSingleton<IEmbeddingService, EmbeddingService>();
+builder.Services.AddSingleton<IEmployeeService, EmployeeService>();
 
 builder.Build().Run();

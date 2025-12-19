@@ -36,10 +36,25 @@ public class OpenAIService : IOpenAIService
             var response = await embeddingClient.GenerateEmbeddingAsync(text);
             return response.Value.ToFloats().ToArray();
         }
+        catch (ClientResultException ex) when (ex.Status == 429)
+        {
+            _logger.LogWarning(ex, "Rate limit exceeded for embedding generation");
+            throw new InvalidOperationException("Service is experiencing high demand. Please try again in a moment.", ex);
+        }
+        catch (ClientResultException ex) when (ex.Status >= 500)
+        {
+            _logger.LogError(ex, "OpenAI service error during embedding generation");
+            throw new InvalidOperationException("AI service is temporarily unavailable. Please try again.", ex);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Timeout generating embedding");
+            throw new InvalidOperationException("Request timed out. Please try again.", ex);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate embedding for text");
-            throw;
+            _logger.LogError(ex, "Unexpected error generating embedding");
+            throw new InvalidOperationException("Unable to process request. Please try again.", ex);
         }
     }
 
@@ -50,7 +65,16 @@ public class OpenAIService : IOpenAIService
 
         var chatClient = _client.GetChatClient(_settings.ChatDeployment);
 
-        var extracted = await ExtractRequirementsAndPreferencesAsync(chatClient, request);
+        ExtractedRequirements extracted;
+        try
+        {
+            extracted = await ExtractRequirementsAndPreferencesAsync(chatClient, request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to extract requirements from query");
+            throw new InvalidOperationException("Unable to parse query requirements. Please try again.", ex);
+        }
         var effectiveRequest = new MatchRequest
         {
             Query = request.Query,
@@ -334,8 +358,33 @@ public class OpenAIService : IOpenAIService
             Temperature = 0f
         };
 
-        var response = await chatClient.CompleteChatAsync(messages, options);
-        var json = response.Value.Content[0].Text;
+        ChatCompletion response;
+        try
+        {
+            response = await chatClient.CompleteChatAsync(messages, options);
+        }
+        catch (ClientResultException ex) when (ex.Status == 429)
+        {
+            _logger.LogWarning(ex, "Rate limit exceeded for chat completion");
+            throw new InvalidOperationException("Service is experiencing high demand. Please try again in a moment.", ex);
+        }
+        catch (ClientResultException ex) when (ex.Status >= 500)
+        {
+            _logger.LogError(ex, "OpenAI service error during chat completion");
+            throw new InvalidOperationException("AI service is temporarily unavailable. Please try again.", ex);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Timeout during chat completion");
+            throw new InvalidOperationException("Request timed out. Please try again.", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during chat completion");
+            throw new InvalidOperationException("Unable to process request. Please try again.", ex);
+        }
+
+        var json = response.Content[0].Text;
 
         ExtractedRequirements? extracted;
         try
@@ -518,9 +567,18 @@ public class OpenAIService : IOpenAIService
                 new UserChatMessage(message)
             };
 
-            var response = await chatClient.CompleteChatAsync(messages);
-            var result = response.Value.Content[0].Text.Trim().ToLowerInvariant();
+            ChatCompletion response;
+            try
+            {
+                response = await chatClient.CompleteChatAsync(messages);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to classify query, allowing by default");
+                return true; // Allow on error
+            }
 
+            var result = response.Content[0].Text.Trim().ToLowerInvariant();
             return result.Contains("yes");
         }
         catch (Exception ex)
@@ -563,9 +621,18 @@ public class OpenAIService : IOpenAIService
                 new UserChatMessage(message)
             };
 
-            var response = await chatClient.CompleteChatAsync(messages);
-            var result = response.Value.Content[0].Text.Trim().ToUpperInvariant();
+            ChatCompletion response;
+            try
+            {
+                response = await chatClient.CompleteChatAsync(messages);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to classify query type, defaulting to MatchRequest");
+                return QueryType.MatchRequest;
+            }
 
+            var result = response.Content[0].Text.Trim().ToUpperInvariant();
             return result switch
             {
                 "MATCH" => QueryType.MatchRequest,
@@ -577,7 +644,7 @@ public class OpenAIService : IOpenAIService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to classify query type, defaulting to MatchRequest");
+            _logger.LogError(ex, "Unexpected error classifying query type");
             return QueryType.MatchRequest;
         }
     }
@@ -684,8 +751,18 @@ public class OpenAIService : IOpenAIService
             };
 
             var options = new ChatCompletionOptions { Temperature = 0f };
-            var response = await chatClient.CompleteChatAsync(messages, options);
-            var result = response.Value.Content[0].Text.Trim().ToLowerInvariant();
+            ChatCompletion response;
+            try
+            {
+                response = await chatClient.CompleteChatAsync(messages, options);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to extract availability constraint, using default");
+                return AvailabilityConstraint.ExcludeUnavailable;
+            }
+
+            var result = response.Content[0].Text.Trim().ToLowerInvariant();
 
             return result switch
             {
@@ -696,7 +773,7 @@ public class OpenAIService : IOpenAIService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to extract availability constraint, defaulting to ExcludeUnavailable");
+            _logger.LogError(ex, "Unexpected error extracting availability constraint");
             return AvailabilityConstraint.ExcludeUnavailable;
         }
     }

@@ -1,5 +1,8 @@
 using AlejanBros.Models;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace AlejanBros.Services;
 
@@ -32,28 +35,59 @@ public class EmployeeMatcherService : IEmployeeMatcherService
     {
         _logger.LogInformation("Finding matches for query: {Query}, TeamSize: {TeamSize}", request.Query, request.TeamSize);
 
-        // Step 1: Extract availability constraint from user query BEFORE filtering
-        var extractedConstraint = await _openAIService.ExtractAvailabilityConstraintAsync(request.Query);
-        _logger.LogInformation("Extracted availability constraint: {Constraint}", extractedConstraint);
+        try
+        {
+            // Step 1: Extract availability constraint from user query BEFORE filtering
+            AvailabilityConstraint extractedConstraint;
+            try
+            {
+                extractedConstraint = await _openAIService.ExtractAvailabilityConstraintAsync(request.Query);
+                _logger.LogInformation("Extracted availability constraint: {Constraint}", extractedConstraint);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to extract availability constraint, using default");
+                extractedConstraint = AvailabilityConstraint.ExcludeUnavailable;
+            }
 
-        // Step 2: Generate embedding for the query
-        var queryEmbedding = await _openAIService.GenerateEmbeddingAsync(request.Query);
+            // Step 2: Generate embedding for the query
+            float[] queryEmbedding;
+            try
+            {
+                queryEmbedding = await _openAIService.GenerateEmbeddingAsync(request.Query);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate embedding for query");
+                throw new InvalidOperationException("Unable to process query. Please try again.", ex);
+            }
 
-        // Step 3: Perform hybrid search (text + vector)
-        var searchResults = await _searchService.HybridSearchAsync(
-            request.Query,
-            queryEmbedding,
-            top: request.TeamSize * 3); // Get more candidates than needed for better ranking
+            // Step 3: Perform hybrid search (text + vector)
+            IEnumerable<EmployeeSearchDocument> searchResults;
+            try
+            {
+                searchResults = await _searchService.HybridSearchAsync(
+                    request.Query,
+                    queryEmbedding,
+                    top: request.TeamSize * 3); // Get more candidates than needed for better ranking
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Search service failed");
+                throw new InvalidOperationException("Search service is temporarily unavailable. Please try again.", ex);
+            }
 
-        // Step 4: Get full employee details from Cosmos DB and apply filters
-        var candidateIds = searchResults.Select(r => r.Id).ToList();
+            // Step 4: Get full employee details from Cosmos DB and apply filters
+            var candidateIds = searchResults.Select(r => r.Id).ToList();
         var candidates = new List<Employee>();
 
         foreach (var id in candidateIds)
         {
-            var employee = await _cosmosDbService.GetEmployeeAsync(id);
-            if (employee != null)
+            try
             {
+                var employee = await _cosmosDbService.GetEmployeeAsync(id);
+                if (employee != null)
+                {
                 // Filter by minimum experience first
                 if (request.MinimumExperience.HasValue && employee.YearsOfExperience < request.MinimumExperience.Value)
                 {
@@ -69,10 +103,15 @@ public class EmployeeMatcherService : IEmployeeMatcherService
                     _ => employee.Availability != AvailabilityStatus.Unavailable
                 };
 
-                if (passesAvailabilityFilter)
-                {
-                    candidates.Add(employee);
+                    if (passesAvailabilityFilter)
+                    {
+                        candidates.Add(employee);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch employee {EmployeeId}, skipping", id);
             }
         }
 
@@ -89,10 +128,19 @@ public class EmployeeMatcherService : IEmployeeMatcherService
             };
         }
 
-        // Step 4: Use AI to analyze and rank candidates
-        _logger.LogInformation("Sending {CandidateCount} candidates to AI for analysis, requesting {TeamSize} matches", candidates.Count, request.TeamSize);
-        var response = await _openAIService.AnalyzeAndRankCandidatesAsync(request, candidates);
-        _logger.LogInformation("AI returned {MatchCount} matches", response.Matches.Count);
+            // Step 4: Use AI to analyze and rank candidates
+            _logger.LogInformation("Sending {CandidateCount} candidates to AI for analysis, requesting {TeamSize} matches", candidates.Count, request.TeamSize);
+            MatchResponse response;
+            try
+            {
+                response = await _openAIService.AnalyzeAndRankCandidatesAsync(request, candidates);
+                _logger.LogInformation("AI returned {MatchCount} matches", response.Matches.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "AI analysis failed");
+                throw new InvalidOperationException("AI analysis service is temporarily unavailable. Please try again.", ex);
+            }
 
         // Step 5: Limit to requested team size
         response.Matches = response.Matches.Take(request.TeamSize).ToList();
@@ -112,17 +160,29 @@ public class EmployeeMatcherService : IEmployeeMatcherService
             response.HasSufficientMatches = false;
         }
 
-        _logger.LogInformation("Final result: {Count} matches for query", response.Matches.Count);
-        return response;
+            _logger.LogInformation("Final result: {Count} matches for query", response.Matches.Count);
+            return response;
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // Re-throw our custom exceptions
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error in FindMatchesAsync");
+            throw new InvalidOperationException("An unexpected error occurred while finding matches. Please try again.", ex);
+        }
     }
 
     public async Task<MatchResponse> FindMatchesForProjectAsync(string projectId, int teamSize = 5)
     {
-        var project = await _cosmosDbService.GetProjectAsync(projectId);
-        if (project == null)
+        try
         {
-            throw new ArgumentException($"Project with ID {projectId} not found");
-        }
+            var project = await _cosmosDbService.GetProjectAsync(projectId);
+            if (project == null)
+            {
+                throw new ArgumentException($"Project with ID {projectId} not found");
+            }
 
         var request = new MatchRequest
         {
@@ -134,6 +194,16 @@ public class EmployeeMatcherService : IEmployeeMatcherService
             AvailabilityRequired = true
         };
 
-        return await FindMatchesAsync(request);
+            return await FindMatchesAsync(request);
+        }
+        catch (ArgumentException)
+        {
+            throw; // Re-throw argument exceptions
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error finding matches for project {ProjectId}", projectId);
+            throw new InvalidOperationException($"Unable to find matches for project {projectId}. Please try again.", ex);
+        }
     }
 }
