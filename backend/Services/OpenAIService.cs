@@ -142,13 +142,36 @@ public class OpenAIService : IOpenAIService
             Order matches by matchScore descending. 
             IMPORTANT: Return EXACTLY {{request.TeamSize}} matches (or all candidates if fewer are available). Do not limit to 5.
             
-            MATCH SCORE GUIDELINES:
-            - 0.7-1.0: Strong match - candidate has most/all required skills
-            - 0.5-0.69: Moderate match - candidate has some required skills but notable gaps
-            - 0.3-0.49: Weak match - candidate lacks many required skills
-            - 0.0-0.29: Poor match - candidate is not suitable for this project
+            MATCH SCORE CALCULATION (use this exact formula):
+            The matchScore is calculated as a weighted sum of the following factors:
             
-            Be honest with scores. If candidates don't have the required skills, give them low scores.
+            1. SKILL MATCH (50% weight):
+               - Calculate: (number of required skills the candidate has) / (total required skills mentioned by user)
+               - Example: If user mentions 3 skills and candidate has 2 of them: 2/3 = 0.67
+               - Multiply result by 0.50
+            
+            2. SKILL LEVEL (25% weight):
+               - For each matched skill, score the level: Expert=1.0, Advanced=0.8, Intermediate=0.5, Beginner=0.2
+               - Average the levels of matched skills
+               - Multiply result by 0.25
+            
+            3. AVAILABILITY (15% weight):
+               - Available = 1.0, PartiallyAvailable = 0.5, Unavailable = 0.0
+               - Multiply result by 0.15
+            
+            4. EXPERIENCE (10% weight):
+               - 10+ years = 1.0, 5-9 years = 0.8, 3-4 years = 0.6, 1-2 years = 0.4, <1 year = 0.2
+               - Multiply result by 0.10
+            
+            FINAL SCORE = (SkillMatch * 0.50) + (SkillLevel * 0.25) + (Availability * 0.15) + (Experience * 0.10)
+            
+            SCORE INTERPRETATION:
+            - 0.7-1.0: Strong match
+            - 0.5-0.69: Moderate match
+            - 0.3-0.49: Weak match
+            - 0.0-0.29: Poor match
+            
+            Be consistent: same candidate with same requirements should always get the same score.
             
             CRITICAL RULES FOR GAPS:
             - "gaps" should ONLY contain skills that are EXPLICITLY MENTIONED in the user's query, Required Skills, or Tech Stack fields above.
